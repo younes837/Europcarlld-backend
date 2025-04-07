@@ -1,0 +1,22 @@
+C:\Users\a.faouzi\Desktop\LLD\backend>pm2 status
+┌────┬───────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
+│ id │ name      │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
+├────┼───────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
+│ 0  │ my-api    │ default     │ 1.0.0   │ fork    │ 2784     │ 7m     │ 45   │ online    │ 0%       │ 51.4mb   │ a.faouzi │ disabled │
+└────┴───────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
+
+For Better Management:
+Restart the application:
+pm2 restart my-api
+Stop the application:
+pm2 stop my-api
+View logs:
+pm2 logs my-api
+
+
+
+
+
+
+
+
