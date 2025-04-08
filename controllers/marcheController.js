@@ -58,23 +58,114 @@ const get_total_client_marche = async (req, res) => {
 };
 // Marche Public Methods
 
+// const getContratsParClient = async (req, res) => {
+//   try {
+//     const months = parseInt(req.query.months, 10) || 3; // Par défaut, 3 mois
+//     const pool = await sql.connect(config);
+//     const result = await pool.request().input("months", sql.Int, months).query(`
+//        SELECT client,code_client, COUNT(CONTRAT) AS nombre_contrats
+// FROM marche_prive_public
+// WHERE F901MSG = 'MARCHE PUBLIC'
+//  AND [DT ARR Prevue] >= CAST(GETDATE() AS DATE)  -- Ensures no past dates
+// AND [DT ARR Prevue] < DATEADD(MONTH, @months, CAST(GETDATE() AS DATE))
+//  GROUP BY client,code_client;
+//       `);
+//     res.json(result.recordset);
+//   } catch (error) {
+//     res.status(500).send("Erreur serveur : " + error.message);
+//   }
+// };
+
+//------------------------------------
 const getContratsParClient = async (req, res) => {
   try {
-    const months = parseInt(req.query.months, 10) || 3; // Par défaut, 3 mois
+    const months = parseInt(req.query.months, 10) || 3;
+    const page = parseInt(req.query.page, 10) || 1;
+    const pageSize = parseInt(req.query.pageSize, 10) || 50;
+    const clientSearch = req.query.clientSearch || "";
+    const sortField = req.query.sortField || "client";
+    const sortOrder = req.query.sortOrder || "asc";
+
     const pool = await sql.connect(config);
-    const result = await pool.request().input("months", sql.Int, months).query(`
-       SELECT client,code_client, COUNT(CONTRAT) AS nombre_contrats
-FROM marche_prive_public
-WHERE F901MSG = 'MARCHE PUBLIC'
- AND [DT ARR Prevue] >= CAST(GETDATE() AS DATE)  -- Ensures no past dates
-AND [DT ARR Prevue] < DATEADD(MONTH, @months, CAST(GETDATE() AS DATE))
- GROUP BY client,code_client;
-      `);
-    res.json(result.recordset);
+
+    // Base query with ROW_NUMBER for pagination
+    let query = `
+      WITH BaseData AS (
+        SELECT 
+          client, 
+          code_client, 
+          COUNT(CONTRAT) AS nombre_contrats
+        FROM marche_prive_public
+        WHERE F901MSG = 'MARCHE PUBLIC'
+        AND [DT ARR Prevue] >= CAST(GETDATE() AS DATE)
+        AND [DT ARR Prevue] < DATEADD(MONTH, @months, CAST(GETDATE() AS DATE))
+    `;
+
+    // Add client search if provided
+    if (clientSearch) {
+      query += ` AND client LIKE @clientSearch`;
+    }
+
+    // Add GROUP BY
+    query += ` GROUP BY client, code_client`;
+
+    // Add sorting and pagination
+    query += `
+      ),
+      SortedData AS (
+        SELECT *,
+          ROW_NUMBER() OVER (
+            ORDER BY 
+              ${sortField === "nombre_contrats" ? "nombre_contrats" : "client"} 
+              ${sortOrder}
+          ) as RowNum
+        FROM BaseData
+      )
+      SELECT client, code_client, nombre_contrats
+      FROM SortedData
+      WHERE RowNum BETWEEN @startRow AND @endRow
+    `;
+
+    // Get total count
+    const countQuery = `
+      SELECT COUNT(*) as total
+      FROM (
+        SELECT client, code_client
+        FROM marche_prive_public
+        WHERE F901MSG = 'MARCHE PUBLIC'
+        AND [DT ARR Prevue] >= CAST(GETDATE() AS DATE)
+        AND [DT ARR Prevue] < DATEADD(MONTH, @months, CAST(GETDATE() AS DATE))
+        ${clientSearch ? ` AND client LIKE @clientSearch` : ""}
+        GROUP BY client, code_client
+      ) as subquery
+    `;
+
+    const startRow = (page - 1) * pageSize + 1;
+    const endRow = page * pageSize;
+
+    const result = await pool
+      .request()
+      .input("months", sql.Int, months)
+      .input("clientSearch", sql.NVarChar, `%${clientSearch}%`)
+      .input("startRow", sql.Int, startRow)
+      .input("endRow", sql.Int, endRow)
+      .query(query);
+
+    const countResult = await pool
+      .request()
+      .input("months", sql.Int, months)
+      .input("clientSearch", sql.NVarChar, `%${clientSearch}%`)
+      .query(countQuery);
+
+    res.json({
+      items: result.recordset,
+      total: countResult.recordset[0].total,
+    });
   } catch (error) {
     res.status(500).send("Erreur serveur : " + error.message);
   }
 };
+//------------------------------------
 
 const getAllContratsClient = async (req, res) => {
   try {
@@ -86,7 +177,9 @@ const getAllContratsClient = async (req, res) => {
 AND [DT ARR Prevue] < DATEADD(MONTH, ${months}, CAST(GETDATE() AS DATE)) AND code_client = @code_client;
     `;
     const result = await pool
-      .request().input("code_client", sql.VarChar, code_client).query(query);
+      .request()
+      .input("code_client", sql.VarChar, code_client)
+      .query(query);
     res.json(result.recordset);
   } catch (error) {
     console.error("Error fetching client data:", error);
@@ -123,7 +216,9 @@ FROM  marche_prive_public WHERE F901MSG ='PRIVEE'      AND [DT ARR Prevue] >= CA
 AND [DT ARR Prevue] < DATEADD(MONTH, ${months}, CAST(GETDATE() AS DATE)) AND code_client = @code_client;
     `;
     const result = await pool
-      .request().input("code_client", sql.VarChar, code_client).query(query);
+      .request()
+      .input("code_client", sql.VarChar, code_client)
+      .query(query);
     res.json(result.recordset);
   } catch (error) {
     console.error("Error fetching client data:", error);
@@ -138,5 +233,5 @@ module.exports = {
   getContratsParClient,
   getAllContratsClient,
   getContratsParClient_prive,
-  getAllContratsClient_prive
+  getAllContratsClient_prive,
 };
