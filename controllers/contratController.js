@@ -178,7 +178,7 @@ const get_contrat_actuelle = async (req, res) => {
     const pool = await sql.connect(config);
     const result = await pool
       .request()
-      .query("SELECT Count(*) as total_count FROM PARC_CLIENT");
+      .query("SELECT *  FROM PARC_CLIENT");
 
     res.json(result.recordset);
   } catch (error) {
