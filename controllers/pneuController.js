@@ -28,6 +28,7 @@ const get_pneu_consomme_detail = async (req, res) => {
     res.status(500).send(error.message);
   }
 };
+
 const get_old_pneu_kms = async (req, res) => {
   try {
     const { nom_client } = req.query; 
@@ -48,6 +49,7 @@ const get_old_pneu_kms = async (req, res) => {
     res.status(500).send("Internal server error");
   }
 };
+
 const get_0_pneus = async (req, res) => {
   try {
     const { nom_client } = req.query; 

@@ -7,7 +7,7 @@ const getTopClientOriginal = async (req, res) => {
       const result = await pool
         .request()
         .query(
-          "SELECT [Parc] ,[Nom client] ,[LOYER] ,[MARGE] ,CAST([RNL] * 100 AS DECIMAL(10,2)) as RNL FROM [AlocproProd].[dbo].[calc_grille_offre_rnl]  order by MARGE desc"
+          "SELECT top 20 [Parc] ,[Nom client] FROM [AlocproProd].[dbo].[calc_grille_offre_rnl]  order by Parc desc"
         );
       res.json(result.recordset);
     } catch (error) {
@@ -15,6 +15,28 @@ const getTopClientOriginal = async (req, res) => {
     }
   };
 
+
+
+
+const getClientCount = async (req, res) => {
+    try {
+      const pool = await sql.connect(config);
+      const result = await pool
+        .request()
+        .query(
+          "SELECT count(*) as totaleClient FROM [AlocproProd].[dbo].[calc_grille_offre_rnl]"
+        );
+      res.json(result.recordset);
+    } catch (error) {
+      res.status(500).send(error.message);
+    }
+  };
+
+
+
+
+
+  
 const getTopClient = async (req, res) => {
   try {
     const pool = await sql.connect(config);
@@ -118,4 +140,5 @@ const getTopClient = async (req, res) => {
 module.exports = {
   getTopClient,
   getTopClientOriginal,
+  getClientCount
 };

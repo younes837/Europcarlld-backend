@@ -298,26 +298,99 @@ const get_entretien_vehicule = async (req, res) => {
 };
 
 
+// const get_all_entretien = async (req, res) => {
+//   try {
+//     const { nom_client } = req.query;
+//     const pool = await sql.connect(config);
 
+//     const query = `
+//       select * from All_entretien_client(@nom_client) order by F400FACDT desc ;
+//     `;
 
+//     const result = await pool
+//       .request()
+//       .input("nom_client", sql.VarChar, nom_client)
+//       .query(query);
 
-
+//     res.json(result.recordset);
+//   } catch (error) {
+//     console.error("Error fetching client data:", error);
+//     res.status(500).send("Internal server error");
+//   }
+// };
 
 const get_all_entretien = async (req, res) => {
   try {
-    const { nom_client } = req.query;
+    const { nom_client, date_debut, date_fin, page = 1, pageSize = 50 } = req.query;
     const pool = await sql.connect(config);
 
-    const query = `
-      select * from All_entretien_client(@nom_client) order by F400FACDT desc ;
+    // Calcul de l'offset pour la pagination
+    const offset = (page - 1) * pageSize;
+
+    // Construction de la clause WHERE
+    let whereConditions = [];
+    if (nom_client) {
+      whereConditions.push(`F050NOM LIKE '%${nom_client}%'`);
+    }
+    if (date_debut) {
+      whereConditions.push(`F400FACDT >= '${date_debut}'`);
+    }
+    if (date_fin) {
+      whereConditions.push(`F400FACDT <= '${date_fin}'`);
+    }
+
+    const whereClause = whereConditions.length > 0 
+      ? `WHERE ${whereConditions.join(' AND ')}` 
+      : '';
+
+    // Requête pour les données paginées
+    const dataQuery = `
+      WITH PaginatedData AS (
+        SELECT 
+          ROW_NUMBER() OVER (ORDER BY F400FACDT DESC) as id,
+          *
+        FROM All_entretien_client(@nom_client)
+        ${whereClause}
+      )
+      SELECT *
+      FROM PaginatedData
+      WHERE id > ${offset} AND id <= ${offset + pageSize}
     `;
 
-    const result = await pool
-      .request()
-      .input("nom_client", sql.VarChar, nom_client)
-      .query(query);
+    // Requête pour les statistiques
+    const summaryQuery = `
+      SELECT 
+        COUNT(*) as totalEntretiens,
+        COUNT(DISTINCT F091IMMA) as uniqueVehiclesCount,
+        SUM(F410MTHT) as totalMontant
+      FROM All_entretien_client(@nom_client)
+      ${whereClause}
+    `;
 
-    res.json(result.recordset);
+    const [dataResult, summaryResult] = await Promise.all([
+      pool.request()
+        .input("nom_client", sql.VarChar, nom_client || '')
+        .query(dataQuery),
+      pool.request()
+        .input("nom_client", sql.VarChar, nom_client || '')
+        .query(summaryQuery)
+    ]);
+
+    const summary = summaryResult.recordset[0];
+    const montantMoyen = summary.totalEntretiens > 0 
+      ? summary.totalMontant / summary.totalEntretiens 
+      : 0;
+
+    res.json({
+      items: dataResult.recordset,
+      total: summary.totalEntretiens,
+      summary: {
+        totalMontant: summary.totalMontant || 0,
+        totalEntretiens: summary.totalEntretiens || 0,
+        montantMoyen: montantMoyen || 0,
+        uniqueVehiclesCount: summary.uniqueVehiclesCount || 0
+      }
+    });
   } catch (error) {
     console.error("Error fetching client data:", error);
     res.status(500).send("Internal server error");
@@ -330,7 +403,8 @@ const get_entretien_matricule = async (req, res) => {
     const pool = await sql.connect(config);
 
     const query = `
-        SELECT * FROM F091IMMAT WHERE F091IMMA LIKE '%' + @matricule + '%';
+      SELECT * FROM entretiens
+      WHERE F091IMMAT LIKE '%' + @matricule + '%';
     `;
 
     const result = await pool
@@ -344,6 +418,85 @@ const get_entretien_matricule = async (req, res) => {
     res.status(500).send("Internal server error");
   }
 };
+
+
+// const get_entretien_matricule = async (req, res) => {
+//   try {
+//     const {
+//       page = 1,
+//       pageSize = 25,
+//       sortField,
+//       sortOrder,
+//       search,
+//       dateDebut,
+//       dateFin,
+//     } = req.query;
+
+//     const pool = await sql.connect(config);
+//     const offset = (parseInt(page) - 1) * parseInt(pageSize);
+
+
+//     const allowedSortFields = [
+//       "F091IMMA", "F090LIB", "F400NMDOC", "F410MTHT",
+//       "K410100PRO", "F410LIB", "F400FACDT", "F050NOM"
+//     ];
+//     const orderBy = allowedSortFields.includes(sortField)
+//       ? `${sortField} ${sortOrder?.toUpperCase() === "DESC" ? "DESC" : "ASC"}`
+//       : "F400FACDT DESC";
+
+//     // Base query avec les filtres dynamiques
+//     let whereClause = "WHERE 1=1";
+
+//     if (search) {
+//       whereClause += " AND F091IMMA LIKE '%' + @search + '%'";
+//     }
+
+//     if (dateDebut) {
+//       whereClause += " AND F400FACDT >= @dateDebut";
+//     }
+
+//     if (dateFin) {
+//       whereClause += " AND F400FACDT <= @dateFin";
+//     }
+
+//     const mainQuery = `
+//       SELECT *
+//       FROM (
+//         SELECT *, ROW_NUMBER() OVER (ORDER BY ${orderBy}) AS row_num
+//         FROM F091IMMAT
+//         ${whereClause}
+//       ) AS sub
+//       WHERE row_num BETWEEN @offset + 1 AND @offset + @pageSize;
+//     `;
+
+//     const countQuery = `
+//       SELECT COUNT(*) AS total
+//       FROM F091IMMAT
+//       ${whereClause}
+//     `;
+
+//     const request = pool.request()
+//       .input("offset", sql.Int, offset)
+//       .input("pageSize", sql.Int, parseInt(pageSize));
+
+//     if (search) request.input("search", sql.VarChar, search);
+//     if (dateDebut) request.input("dateDebut", sql.Date, dateDebut);
+//     if (dateFin) request.input("dateFin", sql.Date, dateFin);
+
+//     const result = await request.query(mainQuery);
+//     const totalResult = await request.query(countQuery);
+
+//     res.json({
+//       items: result.recordset,
+//       total: totalResult.recordset[0].total,
+//     });
+
+//   } catch (error) {
+//     console.error("Erreur get_entretien_matricule:", error);
+//     res.status(500).send("Erreur serveur");
+//   }
+// };
+
 
 module.exports = {
   get_entretien_vehicule,
