@@ -1,11 +1,6 @@
 const sql = require("mssql");
 const config = require("../config/dbConfig");
 
-
-
-
-
-
 const get_pneu_consomme = async (req, res) => {
   try {
     const pool = await sql.connect(config);
@@ -97,30 +92,43 @@ const get_pneu_consomme = async (req, res) => {
     const countQuery = `
       WITH Totals AS (
         SELECT 
-          COUNT(*) as total,
-          SUM(COUNT(DISTINCT PC.F091IMMA)) OVER() as total_vehicles,
-          SUM(SUM(COALESCE(PP.F410QT, 0))) OVER() as total_pneus_consommes,
-          SUM((SELECT SUM(F470NBPNEUS) FROM [AlocproProd].[dbo].[PARC_CLIENT] PC_sub WHERE PC_sub.F050NOMPRE = PC.F050NOMPRE)) OVER() as total_pneus_dotation
+          (SELECT COUNT(DISTINCT F050NOMPRE) FROM [AlocproProd].[dbo].[PARC_CLIENT]) as total_clients,
+          COUNT(DISTINCT PC.F091IMMA) as total_vehicles,
+          SUM(COALESCE(PP.F410QT, 0)) as total_pneus_consommes,
+          (SELECT SUM(F470NBPNEUS) FROM [AlocproProd].[dbo].[PARC_CLIENT] PC_sub WHERE PC_sub.F050NOMPRE = PC.F050NOMPRE) as total_pneus_dotation,
+          SUM(COALESCE(PP.F410MTHT, 0)) as total_montant
         FROM [AlocproProd].[dbo].[PARC_CLIENT] PC
         LEFT JOIN [AlocproProd].[dbo].[Pneu_Parc] PP ON PC.F091IMMA = PP.F091IMMA
         ${whereClause}
         GROUP BY PC.F050NOMPRE
       )
       SELECT 
-        MAX(total) as total,
-        MAX(total_vehicles) as total_vehicles,
-        MAX(total_pneus_consommes) as total_pneus_consommes,
-        MAX(total_pneus_dotation) as total_pneus_dotation
+        MAX(total_clients) as total_clients,
+        SUM(total_vehicles) as total_vehicles,
+        SUM(total_pneus_consommes) as total_pneus_consommes,
+        SUM(total_pneus_dotation) as total_pneus_dotation,
+        SUM(total_montant) as total_montant
       FROM Totals
     `;
     
     const countResult = await pool.request().query(countQuery);
+
+    // Get the total count for pagination
+    const paginationCountQuery = `
+      SELECT COUNT(DISTINCT PC.F050NOMPRE) as total
+      FROM [AlocproProd].[dbo].[PARC_CLIENT] PC
+      LEFT JOIN [AlocproProd].[dbo].[Pneu_Parc] PP ON PC.F091IMMA = PP.F091IMMA
+      ${whereClause}
+    `;
+    
+    const paginationCountResult = await pool.request().query(paginationCountQuery);
 
     // Main query with pagination, sorting, and filtering
     const dataQuery = `
       WITH PaginatedData AS (
         SELECT
           PC.F050NOMPRE AS CLIENT,
+          PC.Client AS code,
           COUNT(DISTINCT PC.F091IMMA) AS number_of_vehicles,
           SUM(COALESCE(PP.F410QT, 0)) AS total_pneu_consommé,
           (SELECT SUM(F470NBPNEUS) FROM [AlocproProd].[dbo].[PARC_CLIENT] PC_sub WHERE PC_sub.F050NOMPRE = PC.F050NOMPRE) AS total_pneu_dotation,
@@ -135,7 +143,7 @@ const get_pneu_consomme = async (req, res) => {
         FROM [AlocproProd].[dbo].[PARC_CLIENT] PC
         LEFT JOIN [AlocproProd].[dbo].[Pneu_Parc] PP ON PC.F091IMMA = PP.F091IMMA
         ${whereClause}
-        GROUP BY PC.F050NOMPRE
+        GROUP BY PC.F050NOMPRE, PC.Client
       )
       SELECT * FROM PaginatedData
       WHERE RowNum > ${offset} AND RowNum <= ${offset + pageSize}
@@ -145,11 +153,13 @@ const get_pneu_consomme = async (req, res) => {
     
     res.json({
       items: result.recordset,
-      total: countResult.recordset[0].total,
+      total: paginationCountResult.recordset[0].total,
       totals: {
+        total_clients: countResult.recordset[0].total_clients || 0,
         total_vehicles: countResult.recordset[0].total_vehicles || 0,
         total_pneus_consommes: countResult.recordset[0].total_pneus_consommes || 0,
-        total_pneus_dotation: countResult.recordset[0].total_pneus_dotation || 0
+        total_pneus_dotation: countResult.recordset[0].total_pneus_dotation || 0,
+        total_montant: countResult.recordset[0].total_montant || 0
       }
     });
   } catch (error) {
@@ -167,19 +177,71 @@ const get_pneu_consomme = async (req, res) => {
 
 
 
+
 const get_pneu_consomme_detail = async (req, res) => {
   try {
     const pool = await sql.connect(config);
+    const code = req.query.code;
+    
+    if (!code) {
+      return res.status(400).send("Code parameter is required");
+    }
+    
     const result = await pool
       .request()
-      .query(
-        "SELECT PP.[F090KY] ,PP.[F091IMMA],PC.F050NOMPRE,PC.Client,[F090LIB],[F050NOM],[F410LIB],[F410MTHT],[K410100PRO],[F400NMDOC]     ,[F410QT],[F410VISKM],[F400FACDT]  FROM [AlocproProd].[dbo].[Pneu_Parc] PP   inner join PARC_CLIENT PC on PP.F091IMMA= PC.F091IMMA where PC.Client = L00019"
-      );
+      .input('code', sql.VarChar, code)
+      .query(`
+        SELECT 
+          PP.[F090KY],
+          PP.[F091IMMA],
+          PC.F050NOMPRE,
+          PC.Client as Code,
+          PP.[F090LIB],
+          PP.[F410LIB],
+          PP.[F410MTHT],
+          PP.[K410100PRO],
+          PP.[F400NMDOC],
+          PP.[F410QT],
+          PP.[F410VISKM],
+          PP.[F400FACDT],
+          PP.[F050NOM]
+        FROM [AlocproProd].[dbo].[Pneu_Parc] PP
+        INNER JOIN [AlocproProd].[dbo].[PARC_CLIENT] PC 
+          ON PP.F091IMMA = PC.F091IMMA
+        WHERE PC.Client = @code
+        ORDER BY PP.[F400FACDT] DESC
+      `);
+    
     res.json(result.recordset);
   } catch (error) {
+    console.error("SQL Error:", error);
     res.status(500).send(error.message);
   }
 };
+
+
+
+
+
+
+
+
+
+
+
+// const get_pneu_consomme_detail = async (req, res) => {
+//   try {
+//     const pool = await sql.connect(config);
+//     const result = await pool
+//       .request()
+//       .query(
+//         "SELECT PP.[F090KY] ,PP.[F091IMMA],PC.F050NOMPRE,PC.Client as Code,[F090LIB],[F050NOM],[F410LIB],[F410MTHT],[K410100PRO],[F400NMDOC]     ,[F410QT],[F410VISKM],[F400FACDT]  FROM [AlocproProd].[dbo].[Pneu_Parc] PP   inner join PARC_CLIENT PC on PP.F091IMMA= PC.F091IMMA where PC.Client = L00019"
+//       );
+//     res.json(result.recordset);
+//   } catch (error) {
+//     res.status(500).send(error.message);
+//   }
+// };
 
 const get_old_pneu_kms = async (req, res) => {
   try {
