@@ -272,34 +272,52 @@ const getVR = async (req, res) => {
     }
 
     const pool = await sql.connect(config);
-    const result = await pool.request().input("months", sql.Int, months).query(`
-        SELECT 
-          dbo.WW_DEF.F090LIB AS [Marque], 
-          CAST(SUM(dbo.WW_DEF.PRIX_TTC) AS INT) AS [Somme de PRIX_TTC], 
-          CAST(SUM(dbo.F400EVT.F400TT) AS INT) AS [Somme de Prix de vente TTC], 
-          CAST(SUM(dbo.F400EVT.F400TT) / SUM(dbo.WW_DEF.PRIX_TTC) * 100 AS INT) AS [Pourcentage],
-          COUNT(dbo.WW_DEF.F091IMMA) AS [Nombre de Matricule], 
-          CAST(AVG(DATEDIFF(MONTH, dbo.WW_DEF.F090DTMISC, dbo.F400EVT.F400FACDT)) AS INT) AS [Moyenne de Durée de vie (Mois)],
-          CAST(SUM(dbo.F400EVT.F400TT) / NULLIF(COUNT(dbo.WW_DEF.F091IMMA), 0) AS INT) AS [VR]
-        FROM 
-          dbo.F400EVT 
-        INNER JOIN 
-          dbo.WW_DEF ON dbo.F400EVT.K400090UNI = dbo.WW_DEF.F090KY  
-        WHERE 
-          dbo.F400EVT.K400T44TYP = 'VM' 
+    const result = await pool
+      .request()
+      .input("months", sql.Int, parseInt(months)).query(`
+        SELECT
+          dbo.WW_DEF.F090LIB AS [Marque],
+          CAST(SUM(dbo.WW_DEF.PRIX_TTC) AS DECIMAL(18,2)) AS [Somme_de_PRIX_TTC],
+          CAST(SUM(dbo.F400EVT.F400TT) AS DECIMAL(18,2)) AS [Somme_de_Prix_de_vente_TTC],
+          CAST(
+            CASE 
+              WHEN SUM(dbo.WW_DEF.PRIX_TTC) = 0 THEN 0 
+              ELSE (SUM(dbo.F400EVT.F400TT) / SUM(dbo.WW_DEF.PRIX_TTC) * 100) 
+            END 
+          AS INT) AS [Pourcentage],
+          COUNT(dbo.WW_DEF.F091IMMA) AS [Nombre_de_Matricule],
+          CAST(AVG(DATEDIFF(MONTH, dbo.WW_DEF.F090DTMISC, dbo.F400EVT.F400FACDT)) AS INT) AS [Moyenne_de_Duree_de_vie],
+          CAST(
+            CASE 
+              WHEN COUNT(dbo.WW_DEF.F091IMMA) = 0 THEN 0 
+              ELSE SUM(dbo.F400EVT.F400TT) / COUNT(dbo.WW_DEF.F091IMMA) 
+            END 
+          AS DECIMAL(18,2)) AS [VR]
+        FROM
+          dbo.F400EVT
+        INNER JOIN
+          dbo.WW_DEF ON dbo.F400EVT.K400090UNI = dbo.WW_DEF.F090KY
+        WHERE
+          dbo.F400EVT.K400T44TYP = 'VM'
           AND dbo.F400EVT.F400FACDT >= DATEADD(MONTH, -@months, GETDATE())
           AND dbo.WW_DEF.F091IMMA NOT IN (
-            SELECT Matricule 
-            FROM Sinistre 
+            SELECT Matricule
+            FROM Sinistre
             WHERE Nature_op IN ('Reforme Technique', 'Reforme Economique')
           )
-        GROUP BY 
+        GROUP BY
           dbo.WW_DEF.F090LIB
-        ORDER BY 
+        ORDER BY
           dbo.WW_DEF.F090LIB
       `);
 
-    res.json(result.recordset || []);
+    // Add an id field to each row for DataGrid
+    const formattedData = result.recordset.map((row, index) => ({
+      id: index, // Add an id field for DataGrid
+      ...row,
+    }));
+
+    res.json(formattedData);
   } catch (error) {
     console.error("Error executing query:", error);
     res.status(500).send("Server error");
