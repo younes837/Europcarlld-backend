@@ -12,6 +12,23 @@ const getTotalVendu = async (req, res) => {
   }
 };
 
+const getTotalVendu_lastYear = async (req,res) => {
+  try{
+    const pool = await sql.connect(config);
+    const result = await pool.request().query(`
+      select count(*) as totalLastYear 
+      from dbo.F400EVT 
+      inner join dbo.WW_DEF
+      on dbo.F400EVT.K400090UNI = dbo.WW_DEF.F090KY
+      where (dbo.F400EVT.K400T44TYP = 'VM')
+      and YEAR(F400EVT.F400FACDT) = YEAR(GETDATE()) -1 ;
+      `);
+    res.json(result.recordset)
+  }catch(err){
+    res.status(500).send(err.message)
+  }
+}
+
 // Function to get sold vehicles
 // const getVehiculeVendu = async (req, res) => {
 //   try {
@@ -311,4 +328,5 @@ module.exports = {
   getVehiculeVendu,
   getVR,
   getVehiculeVenduStats,
+  getTotalVendu_lastYear
 };
