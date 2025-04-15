@@ -1,66 +1,95 @@
 const sql = require("mssql");
 const config = require("../config/dbConfig");
 
+
+
+
+
+
 const get_car_dispo = async (req, res) => {
   try {
     const pool = await sql.connect(config);
-
+    
+    // Get query parameters
     const page = parseInt(req.query.page) || 1;
-    const pageSize = parseInt(req.query.pageSize) || 100;
-    const offset = (page - 1) * pageSize;
+    const pageSize = parseInt(req.query.pageSize) || 50;
+    const matriculeSearch = req.query.matriculeSearch || '';
+    const marqueSearch = req.query.marqueSearch || '';
+    const sortField = req.query.sortField || 'date_depart';
+    const sortOrder = req.query.sortOrder || 'asc';
 
-    const sortField = req.query.sortField || "F091IMMA"; // immatricule
-    const sortOrder = req.query.sortOrder || "asc";
-
-    const marqueSearch = req.query.marqueSearch || "";
-    const matriculeSearch = req.query.matriculeSearch || "";
-
-    // Build WHERE clause
-    const whereConditions = [];
-
-    if (marqueSearch) {
-      whereConditions.push(`[F090LIB] LIKE '%${marqueSearch}%'`);
-    }
+    // Build the WHERE clause
+    let whereClause = `
+      "F090PARC"."K090050PRO"='MARLOC' 
+      AND "F090PARC"."F090ACTIF"='1' 
+      AND "F570MVT"."F570CLOS"='2' 
+      AND "F090PARC"."F090OUTDT" IS NULL 
+      AND "F091IMMAT"."F091IMMA" NOT LIKE 'C%' 
+      AND "VT58POS"."F901LNG"='001' 
+      AND "VT58POS"."F901MSG" LIKE 'Disponible'
+    `;
 
     if (matriculeSearch) {
-      whereConditions.push(`[F091IMMA] LIKE '%${matriculeSearch}%'`);
+      whereClause += ` AND "F091IMMAT"."F091IMMA" LIKE '%${matriculeSearch}%'`;
+    }
+    if (marqueSearch) {
+      whereClause += ` AND "F090PARC"."F090LIB" LIKE '%${marqueSearch}%'`;
     }
 
-    const whereClause = whereConditions.length > 0
-      ? `WHERE ${whereConditions.join(" AND ")}`
-      : "";
+    // Build the ORDER BY clause
+    const validSortFields = {
+      'date_depart': '"F570MVT"."F570DTDEP"',
+      'code_agence': '"F570MVT"."K570030DEP"',
+      'agence': '"Agence_depart"."F030LIB"',
+      'matricule': '"F091IMMAT"."F091IMMA"',
+      'marque': '"F090PARC"."F090LIB"'
+    };
 
-    // Count query
+    const orderByClause = validSortFields[sortField] 
+      ? `${validSortFields[sortField]} ${sortOrder.toUpperCase()}`
+      : '"F570MVT"."F570DTDEP"';
+
+    // Count total records
     const countQuery = `
       SELECT COUNT(*) as total
-      FROM (
-        SELECT * FROM dbo.getCarDispo()
-      ) AS Cars
-      ${whereClause}
+      FROM ((("F570MVT" "F570MVT" 
+      LEFT OUTER JOIN "F090PARC" "F090PARC" ON "F570MVT"."K570090UNI"="F090PARC"."F090KY")
+      LEFT OUTER JOIN "F030AGE" "Agence_depart" ON "F570MVT"."K570030DEP"="Agence_depart"."F030KY")
+      LEFT OUTER JOIN "VT58POS" "VT58POS" ON "F570MVT"."K570T58POS"="VT58POS"."FT58KY")
+      LEFT OUTER JOIN "F091IMMAT" "F091IMMAT" ON "F090PARC"."K090091IMM"="F091IMMAT"."F091KY"
+      WHERE ${whereClause}
     `;
 
-    // Data query with pagination
+    // Main data query with pagination using ROW_NUMBER()
     const dataQuery = `
-      WITH CarData AS (
+      WITH NumberedRows AS (
         SELECT 
-          ROW_NUMBER() OVER (ORDER BY [${sortField}] ${sortOrder}) as id,
-          *
-        FROM (
-          SELECT * FROM dbo.getCarDispo()
-        ) AS RawData
-        ${whereClause}
+          "F570MVT"."F570DTDEP" as date_depart,
+          "F570MVT"."K570030DEP" as code_agence,
+          "Agence_depart"."F030LIB" as agence,
+          "F091IMMAT"."F091IMMA" as matricule,
+          "F090PARC"."F090LIB" as marque,
+          ROW_NUMBER() OVER (ORDER BY ${orderByClause}) as RowNum
+        FROM ((("F570MVT" "F570MVT" 
+        LEFT OUTER JOIN "F090PARC" "F090PARC" ON "F570MVT"."K570090UNI"="F090PARC"."F090KY")
+        LEFT OUTER JOIN "F030AGE" "Agence_depart" ON "F570MVT"."K570030DEP"="Agence_depart"."F030KY")
+        LEFT OUTER JOIN "VT58POS" "VT58POS" ON "F570MVT"."K570T58POS"="VT58POS"."FT58KY")
+        LEFT OUTER JOIN "F091IMMAT" "F091IMMAT" ON "F090PARC"."K090091IMM"="F091IMMAT"."F091KY"
+        WHERE ${whereClause}
       )
       SELECT *
-      FROM CarData
-      WHERE id > ${offset} AND id <= ${offset + pageSize}
+      FROM NumberedRows
+      WHERE RowNum BETWEEN (${page - 1} * ${pageSize} + 1) AND (${page} * ${pageSize})
     `;
 
-    const countResult = await pool.request().query(countQuery);
-    const result = await pool.request().query(dataQuery);
+    const [countResult, dataResult] = await Promise.all([
+      pool.request().query(countQuery),
+      pool.request().query(dataQuery)
+    ]);
 
     res.json({
-      items: result.recordset,
-      total: countResult.recordset[0]?.total || 0,
+      items: dataResult.recordset,
+      total: countResult.recordset[0].total
     });
 
   } catch (error) {
@@ -69,149 +98,57 @@ const get_car_dispo = async (req, res) => {
   }
 };
 
-// const get_car_dispo = async (req, res) => {
-//   try {
-//     const pool = await sql.connect(config);
-
-//     // 📦 Pagination
-//     const page = parseInt(req.query.page) || 1;
-//     const pageSize = parseInt(req.query.pageSize) || 100;
-//     const offset = (page - 1) * pageSize;
-
-//     // 🔽 Sorting
-//     const sortField = req.query.sortField || "date_dispo";
-//     const sortOrder = req.query.sortOrder || "asc";
-
-//     // 🔍 Search globale (marque ou modele)
-//     const search = req.query.search || "";
-
-//     // 🧱 WHERE clause
-//     let whereClause = "";
-//     const whereConditions = [];
-
-//     if (search) {
-//       whereConditions.push(`([marque] LIKE '%${search}%' OR [modele] LIKE '%${search}%')`);
-//     }
-
-//     // 🧪 Filtres dynamiques
-//     if (req.query.filters) {
-//       try {
-//         const filters = JSON.parse(req.query.filters);
-//         if (Array.isArray(filters)) {
-//           const filterConditions = filters.map(({ field, operator, value }) => {
-//             switch (operator) {
-//               case "contains":
-//                 return `[${field}] LIKE '%${value}%'`;
-//               case "equals":
-//                 return `[${field}] = '${value}'`;
-//               case "startsWith":
-//                 return `[${field}] LIKE '${value}%'`;
-//               case "endsWith":
-//                 return `[${field}] LIKE '%${value}'`;
-//               case ">":
-//               case "<":
-//               case ">=":
-//               case "<=":
-//                 return `[${field}] ${operator} '${value}'`;
-//               default:
-//                 return `[${field}] = '${value}'`;
-//             }
-//           });
-
-//           whereConditions.push(...filterConditions);
-//         }
-//       } catch (e) {
-//         console.error("Erreur parsing filters:", e);
-//       }
-//     }
-
-//     if (whereConditions.length > 0) {
-//       whereClause = `WHERE ${whereConditions.join(" AND ")}`;
-//     }
-
-//     // 🔢 Total
-//     const countQuery = `
-//       SELECT COUNT(*) as total 
-//       FROM [AlocproProd].[dbo].[VoituresDisponibles]
-//       ${whereClause}
-//     `;
-
-//     const countResult = await pool.request().query(countQuery);
-
-//     // 🚗 Data Query
-//     const dataQuery = `
-//       WITH PaginatedCars AS (
-//         SELECT 
-//           ROW_NUMBER() OVER (ORDER BY [${sortField}] ${sortOrder}) as id,
-//           [id_voiture], [marque], [modele], [etat], [km], [date_dispo], [prix_jour], [matricule]
-//         FROM [AlocproProd].[dbo].[VoituresDisponibles]
-//         ${whereClause}
-//       )
-//       SELECT *
-//       FROM PaginatedCars
-//       WHERE id > ${offset} AND id <= ${offset + pageSize}
-//     `;
-
-//     const result = await pool.request().query(dataQuery);
-
-//     res.json({
-//       items: result.recordset,
-//       total: countResult.recordset[0].total,
-//     });
-
-//   } catch (error) {
-//     console.error("Erreur base de données:", error);
-//     res.status(500).json({ error: error.message });
-//   }
-// };
 
 
 
-  const get_car_attente = async (req, res) => {
-    try {
-      const pool = await sql.connect(config);
-      const result = await pool
-        .request()
-        .query(
-          "exec get_vehicule_enattente"
-        );
-      res.json(result.recordset);
-    } catch (error) {
-      res.status(500).send(error.message);
-    }
-  };
-  
-  const get_position_car = async (req, res) => {
-    try {
-      const pool = await sql.connect(config);
-      const result = await pool
-        .request()
-        .query(
-          "SELECT MS.F901MSG as position,MV.K570T58POS as code , COUNT(*) AS Nombre_Vehicule FROM F570MVT MV INNER JOIN FT58POS PS ON MV.K570T58POS = PS.FT58KY INNER JOIN F901MSG MS ON PS.LT58901MSG = MS.F901NUM WHERE CURRENT_TIMESTAMP between MV.F570DTDEP  AND MV.F570DTARR AND MS.F901LNG = '001' GROUP BY MS.F901MSG,MV.K570T58POS ORDER BY Nombre_Vehicule DESC;"
-        );
-      res.json(result.recordset);
-    } catch (error) {
-      res.status(500).send(error.message);
-    }
-  };
 
-  const get_all_positions = async (req, res) => {
-    try {
-      const pool = await sql.connect(config);
-      const result = await pool
-        .request()
-        .query(
-          "SELECT TOP 5000 MS.F901MSG, MV.[F570DTDEP],MV.[F570DTARR],MV.[F570KMDEP],MV.[K570T58POS],MV.[K570090UNI],PARC.F090LIB FROM F570MVT MV INNER JOIN FT58POS PS ON MV.K570T58POS = PS.FT58KY INNER JOIN F901MSG MS ON PS.LT58901MSG = MS.F901NUM inner join F090PARC PARC on MV.K570090UNI = PARC.F090KY  WHERE MV.F570DTDEP < CURRENT_TIMESTAMP and MV.F570DTARR > CURRENT_TIMESTAMP AND MS.F901LNG ='001' ORDER BY F570DTDEP DESC ;"
-        );
-      res.json(result.recordset);
-    } catch (error) {
-      res.status(500).send(error.message);
-    }
-  };
-  
-  module.exports = {
-    get_car_dispo,
-    get_car_attente,
-    get_position_car,
-    get_all_positions
-  };
+
+
+
+
+
+
+const get_car_attente = async (req, res) => {
+  try {
+    const pool = await sql.connect(config);
+    const result = await pool.request().query("exec get_vehicule_enattente");
+    res.json(result.recordset);
+  } catch (error) {
+    res.status(500).send(error.message);
+  }
+};
+
+const get_position_car = async (req, res) => {
+  try {
+    const pool = await sql.connect(config);
+    const result = await pool
+      .request()
+      .query(
+        "SELECT MS.F901MSG as position,MV.K570T58POS as code , COUNT(*) AS Nombre_Vehicule FROM F570MVT MV INNER JOIN FT58POS PS ON MV.K570T58POS = PS.FT58KY INNER JOIN F901MSG MS ON PS.LT58901MSG = MS.F901NUM WHERE CURRENT_TIMESTAMP between MV.F570DTDEP  AND MV.F570DTARR AND MS.F901LNG = '001' GROUP BY MS.F901MSG,MV.K570T58POS ORDER BY Nombre_Vehicule DESC;"
+      );
+    res.json(result.recordset);
+  } catch (error) {
+    res.status(500).send(error.message);
+  }
+};
+
+const get_all_positions = async (req, res) => {
+  try {
+    const pool = await sql.connect(config);
+    const result = await pool
+      .request()
+      .query(
+        "SELECT TOP 5000 MS.F901MSG, MV.[F570DTDEP],MV.[F570DTARR],MV.[F570KMDEP],MV.[K570T58POS],MV.[K570090UNI],PARC.F090LIB FROM F570MVT MV INNER JOIN FT58POS PS ON MV.K570T58POS = PS.FT58KY INNER JOIN F901MSG MS ON PS.LT58901MSG = MS.F901NUM inner join F090PARC PARC on MV.K570090UNI = PARC.F090KY  WHERE MV.F570DTDEP < CURRENT_TIMESTAMP and MV.F570DTARR > CURRENT_TIMESTAMP AND MS.F901LNG ='001' ORDER BY F570DTDEP DESC ;"
+      );
+    res.json(result.recordset);
+  } catch (error) {
+    res.status(500).send(error.message);
+  }
+};
+
+module.exports = {
+  get_car_dispo,
+  get_car_attente,
+  get_position_car,
+  get_all_positions,
+};
