@@ -1,22 +1,17 @@
 const sql = require("mssql");
 const config = require("../config/dbConfig");
 
-
-
-
-
-
 const get_car_dispo = async (req, res) => {
   try {
     const pool = await sql.connect(config);
-    
+
     // Get query parameters
     const page = parseInt(req.query.page) || 1;
     const pageSize = parseInt(req.query.pageSize) || 50;
-    const matriculeSearch = req.query.matriculeSearch || '';
-    const marqueSearch = req.query.marqueSearch || '';
-    const sortField = req.query.sortField || 'date_depart';
-    const sortOrder = req.query.sortOrder || 'asc';
+    const matriculeSearch = req.query.matriculeSearch || "";
+    const marqueSearch = req.query.marqueSearch || "";
+    const sortField = req.query.sortField || "date_depart";
+    const sortOrder = req.query.sortOrder || "asc";
 
     // Build the WHERE clause
     let whereClause = `
@@ -38,14 +33,14 @@ const get_car_dispo = async (req, res) => {
 
     // Build the ORDER BY clause
     const validSortFields = {
-      'date_depart': '"F570MVT"."F570DTDEP"',
-      'code_agence': '"F570MVT"."K570030DEP"',
-      'agence': '"Agence_depart"."F030LIB"',
-      'matricule': '"F091IMMAT"."F091IMMA"',
-      'marque': '"F090PARC"."F090LIB"'
+      date_depart: '"F570MVT"."F570DTDEP"',
+      code_agence: '"F570MVT"."K570030DEP"',
+      agence: '"Agence_depart"."F030LIB"',
+      matricule: '"F091IMMAT"."F091IMMA"',
+      marque: '"F090PARC"."F090LIB"',
     };
 
-    const orderByClause = validSortFields[sortField] 
+    const orderByClause = validSortFields[sortField]
       ? `${validSortFields[sortField]} ${sortOrder.toUpperCase()}`
       : '"F570MVT"."F570DTDEP"';
 
@@ -79,39 +74,41 @@ const get_car_dispo = async (req, res) => {
       )
       SELECT *
       FROM NumberedRows
-      WHERE RowNum BETWEEN (${page - 1} * ${pageSize} + 1) AND (${page} * ${pageSize})
+      WHERE RowNum BETWEEN (${
+        page - 1
+      } * ${pageSize} + 1) AND (${page} * ${pageSize})
     `;
 
     const [countResult, dataResult] = await Promise.all([
       pool.request().query(countQuery),
-      pool.request().query(dataQuery)
+      pool.request().query(dataQuery),
     ]);
 
     res.json({
       items: dataResult.recordset,
-      total: countResult.recordset[0].total
+      total: countResult.recordset[0].total,
     });
-
   } catch (error) {
     console.error("Database error:", error);
     res.status(500).json({ error: error.message });
   }
 };
 
-
-
-
-
-
-
-
-
-
-
 const get_car_attente = async (req, res) => {
   try {
     const pool = await sql.connect(config);
-    const result = await pool.request().query("exec get_vehicule_enattente");
+    const result = await pool.request().query(`
+    SELECT "F470LD"."F470CONTRAT" as contrat, "F090PARC"."F090LIB" as marque, "F091IMMAT"."F091IMMA" as matricule,"F470LD"."F470DTARRP" as date_arrivee, "F050TIERS"."F050NOM" as nom_client,
+ "VT37ETA"."F901MSG" as libele, "F050TIERS"."F050KY" as code_client, "F090PARC"."F090INDT" as date_entree, "F470LD"."K470T46TYP" as type,  "F470LD"."F470DTDEP" as date_depart  
+ FROM   (((("AlocproProd"."dbo"."F470LD" "F470LD" LEFT OUTER JOIN "AlocproProd"."dbo"."F570MVT" "F570MVT"   
+ ON "F470LD"."K470570MVT"="F570MVT"."F570KY") LEFT OUTER JOIN "AlocproProd"."dbo"."F050TIERS" "F050TIERS"   
+ ON "F470LD"."K470050TIE"="F050TIERS"."F050KY") LEFT OUTER JOIN "AlocproProd"."dbo"."VT37ETA" "VT37ETA"    
+ ON "F470LD"."K470T37ETA"="VT37ETA"."FT37KY") LEFT OUTER JOIN "AlocproProd"."dbo"."F090PARC" "F090PARC" 
+   ON "F570MVT"."K570090UNI"="F090PARC"."F090KY") LEFT OUTER JOIN "AlocproProd"."dbo"."F091IMMAT" "F091IMMAT"   
+   ON "F090PARC"."K090091IMM"="F091IMMAT"."F091KY"
+ WHERE  "F091IMMAT"."F091IMMA" NOT  LIKE 'c%' AND ("VT37ETA"."F901MSG" LIKE 'Contrat' 
+ OR "VT37ETA"."F901MSG" LIKE 'Préparation - Résa')  AND "F470LD"."K470T46TYP" LIKE '1ATTENTE'  
+    `);
     res.json(result.recordset);
   } catch (error) {
     res.status(500).send(error.message);
