@@ -1,6 +1,8 @@
 const sql = require("mssql");
-const { connectToDatabase } = require("../config/dbConfig");
 const config = require("../config/dbConfig");
+
+
+
 // const getContratLongueDuree = async (req, res) => {
 //   try {
 //     const pool = await sql.connect(config);
