@@ -24,7 +24,7 @@ const achatRoutes = require("./routes/achatRoutes");
 const get_car_dispo  = require("./routes/etatCarRoutes");
 const { getParcGlobal } = require('./controllers/parcController');
 const { get_ca_vehicule } = require('./controllers/revenueController');
-const { getTopClient, getTopClientOriginal, getClientCount } = require('./controllers/calculGrillController');
+const { getTopClient, getTopClientOriginal, getClientCount, getMargeParClient } = require('./controllers/calculGrillController');
 const { get_ca } = require("./controllers/caController");
 const { get_commande_encours } = require("./controllers/cmmdencoursController");
 const { get_km_projection } = require("./controllers/projkmController");
@@ -46,6 +46,8 @@ app.get('/api/parc_ca', get_ca_vehicule);
 app.get('/api/cal_grille_offre', getTopClient);
 app.get('/api/totalclient', getClientCount);
 app.get('/api/cal_grille_offre_original', getTopClientOriginal);
+app.get('/api/marge_client', getMargeParClient);
+
 app.get('/api/ca_annuelle', get_ca);
 app.get('/api/com_encours', get_commande_encours);
 app.get('/api/km_project', get_km_projection);
