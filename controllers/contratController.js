@@ -1,8 +1,6 @@
 const sql = require("mssql");
 const config = require("../config/dbConfig");
 
-
-
 // const getContratLongueDuree = async (req, res) => {
 //   try {
 //     const pool = await sql.connect(config);
@@ -290,6 +288,194 @@ const get_all_restitutions = async (req, res) => {
   }
 };
 
+// Express.js backend code update for LLD-VR endpoint
+// Express.js backend code update for LLD-VR endpoint
+// Express.js backend code update for LLD-VR endpoint
+const get_lld_vr = async (req, res) => {
+  try {
+    // Get query parameters for server-side operations
+    const page = parseInt(req.query.page) || 0;
+    const pageSize = parseInt(req.query.pageSize) || 25;
+    const sortField = req.query.sortField || "Date_Debut";
+    const sortDirection = req.query.sortDirection || "desc";
+    const searchQuery = req.query.searchQuery || "";
+    const fromDate = req.query.fromDate || "";
+    const toDate = req.query.toDate || "";
+
+    // Log received parameters for debugging
+    console.log("Received params:", {
+      page,
+      pageSize,
+      sortField,
+      sortDirection,
+      searchQuery,
+      fromDate,
+      toDate,
+    });
+
+    // Calculate offset for pagination
+    const offset = page * pageSize;
+
+    // Start building the SQL query
+    let baseQuery = `
+      WITH VenteVO AS (
+        SELECT 
+            F091IMMA,
+            F400TT AS prix_vente
+        FROM 
+            F400EVT
+        JOIN 
+            F091IMMAT ON F400EVT.F400LIB = 'Vente VO - ' + F091IMMAT.F091IMMA
+      )
+    `;
+
+    // Build WHERE clause - fixed to start with WHERE keyword and valid condition
+    let whereClause = `
+      WHERE 1=1  -- Base condition that's always true
+    `;
+
+    // Add client search condition if search query is provided
+    if (searchQuery && searchQuery.trim() !== "") {
+      whereClause += `
+        AND (TIE.F050NOM + ' ' + TIE.F050PRENOM LIKE '%${searchQuery.trim()}%')
+      `;
+    }
+
+    // Add date range filter for Date_Debut
+    if (fromDate && fromDate.trim() !== "") {
+      whereClause += `
+        AND F470LD.F470DTDEP >= CONVERT(DATE, '${fromDate.trim()}', 120)
+      `;
+    }
+
+    if (toDate && toDate.trim() !== "") {
+      whereClause += `
+        AND F470LD.F470DTDEP <= CONVERT(DATE, '${toDate.trim()}', 120)
+      `;
+    }
+
+    // Build the main query with ROW_NUMBER for pagination
+    let mainQuery = `
+      SELECT 
+        ROW_NUMBER() OVER(ORDER BY ${sanitizeField(sortField)} ${
+      sortDirection === "desc" ? "DESC" : "ASC"
+    }) AS RowNum,
+        TIE.F050NOM + ' ' + TIE.F050PRENOM AS client,
+        F470LD.F470CONTRAT AS CONTRAT,
+        CASE WHEN F470LD.K470T37ETA = '3' THEN 'contrat' ELSE 'clos' END AS ETAT,
+        F470LD.F470DUREE AS DUREE,
+        F470LD.F470KMAFF AS KM,
+        F400EVT.F400HT AS [loyer ht],
+        F400EVT.F400TT AS [loyer ttc],
+        F400EVT.F400HT * F470LD.F470DUREE AS loyer_global,
+        F090PARC.F090LIB AS [marque modele],
+        F091IMMAT.F091IMMA AS IMMA,
+        F470LD.F470VR AS [VR HT],
+        F470LD.F470VR * 1.2 AS [VR TTC],
+        F090PARC.F090ACHPXHT AS ACH_PX_HT,
+        F090PARC.F090ACHPXHT + F090PARC.F090ACHTVA AS ACH_PX_TTC,
+        CASE 
+            WHEN F090PARC.F090ACHTVA = 0 THEN NULL 
+            ELSE (F470LD.F470VR * 1.2) / (F090PARC.F090ACHPXHT + F090PARC.F090ACHTVA)
+        END AS [%],
+        F470LD.F470DTDEP AS Date_Debut,
+        F470LD.F470DTARRP AS date_fin,
+        F470LD.F470DTARR AS fin_reelle,
+        vo.prix_vente,
+        vo.prix_vente - (F470LD.F470VR * 1.2) AS sessio
+      FROM
+        F050TIERS AS TIE
+        INNER JOIN F470LD ON TIE.F050KY = F470LD.K470050TIE
+        INNER JOIN VT37ETA ON F470LD.K470T37ETA = VT37ETA.FT37KY AND VT37ETA.F901LNG = '001'
+        INNER JOIN VT46TYP ON F470LD.K470T46TYP = VT46TYP.FT46KY AND VT46TYP.F901LNG = '001'
+        INNER JOIN F400EVT ON F470LD.K470400EVTTIE = F400EVT.F400KY
+        INNER JOIN F020ADR ON TIE.K050020ADR = F020ADR.F020KY
+        LEFT JOIN F090PARC ON F400EVT.K400090UNI = F090PARC.F090KY
+        LEFT JOIN F091IMMAT ON F090PARC.K090091IMM = F091IMMAT.F091KY
+        LEFT JOIN VenteVO vo ON F091IMMAT.F091IMMA = vo.F091IMMA
+        LEFT JOIN F050TIERS AS COM ON COM.F050KY = F470LD.K470050COM
+        LEFT JOIN F050TIERS AS CON ON CON.F050KY = F470LD.K470050CON
+      ${whereClause}
+    `;
+
+    // Connect to database
+    const pool = await sql.connect(config);
+
+    // Get total count for pagination - USING THE SAME WHERE CLAUSE as data query
+    const countQuery = `
+      ${baseQuery}
+      SELECT COUNT(*) AS totalCount 
+      FROM
+        F050TIERS AS TIE
+        INNER JOIN F470LD ON TIE.F050KY = F470LD.K470050TIE
+        INNER JOIN VT37ETA ON F470LD.K470T37ETA = VT37ETA.FT37KY AND VT37ETA.F901LNG = '001'
+        INNER JOIN VT46TYP ON F470LD.K470T46TYP = VT46TYP.FT46KY AND VT46TYP.F901LNG = '001'
+        INNER JOIN F400EVT ON F470LD.K470400EVTTIE = F400EVT.F400KY
+        INNER JOIN F020ADR ON TIE.K050020ADR = F020ADR.F020KY
+        LEFT JOIN F090PARC ON F400EVT.K400090UNI = F090PARC.F090KY
+        LEFT JOIN F091IMMAT ON F090PARC.K090091IMM = F091IMMAT.F091KY
+        LEFT JOIN VenteVO vo ON F091IMMAT.F091IMMA = vo.F091IMMA
+        LEFT JOIN F050TIERS AS COM ON COM.F050KY = F470LD.K470050COM
+        LEFT JOIN F050TIERS AS CON ON CON.F050KY = F470LD.K470050CON
+      ${whereClause}
+    `;
+
+    const countResult = await pool.request().query(countQuery);
+    const totalCount = countResult.recordset[0].totalCount;
+
+    // Add pagination to the query using a nested query approach
+    const dataQuery = `
+      ${baseQuery}
+      SELECT * FROM (
+        ${mainQuery}
+      ) AS ResultSet
+      WHERE RowNum BETWEEN ${offset + 1} AND ${offset + pageSize}
+    `;
+
+    // Get paginated data
+    const result = await pool.request().query(dataQuery);
+
+    // Return the data in the expected format
+    res.header("Access-Control-Allow-Origin", "*");
+    res.json({
+      rows: result.recordset,
+      totalCount: totalCount,
+    });
+  } catch (err) {
+    console.error("SQL error:", err);
+    res.status(500).send({ error: err.message });
+  }
+};
+
+// Helper function to sanitize field names
+function sanitizeField(field) {
+  // Map frontend field names to actual SQL column names
+  const fieldMap = {
+    client: "TIE.F050NOM + ' ' + TIE.F050PRENOM",
+    CONTRAT: "F470LD.F470CONTRAT",
+    ETAT: "CASE WHEN F470LD.K470T37ETA = '3' THEN 'contrat' ELSE 'clos' END",
+    DUREE: "F470LD.F470DUREE",
+    KM: "F470LD.F470KMAFF",
+    "loyer ht": "F400EVT.F400HT",
+    "loyer ttc": "F400EVT.F400TT",
+    loyer_global: "F400EVT.F400HT * F470LD.F470DUREE",
+    "marque modele": "F090PARC.F090LIB",
+    IMMA: "F091IMMAT.F091IMMA",
+    "VR HT": "F470LD.F470VR",
+    "VR TTC": "F470LD.F470VR * 1.2",
+    ACH_PX_HT: "F090PARC.F090ACHPXHT",
+    ACH_PX_TTC: "F090PARC.F090ACHPXHT + F090PARC.F090ACHTVA",
+    "%": "CASE WHEN F090PARC.F090ACHTVA = 0 THEN NULL ELSE (F470LD.F470VR * 1.2) / (F090PARC.F090ACHPXHT + F090PARC.F090ACHTVA) END",
+    Date_Debut: "F470LD.F470DTDEP",
+    date_fin: "F470LD.F470DTARRP",
+    fin_reelle: "F470LD.F470DTARR",
+    prix_vente: "vo.prix_vente",
+    sessio: "vo.prix_vente - (F470LD.F470VR * 1.2)",
+  };
+
+  return fieldMap[field] || field;
+}
+
 module.exports = {
   getContratLongueDuree,
   getRevenue,
@@ -301,4 +487,5 @@ module.exports = {
   get_restitution_contrat,
   get_all_productions,
   get_all_restitutions,
+  get_lld_vr,
 };

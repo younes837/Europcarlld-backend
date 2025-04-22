@@ -1,9 +1,6 @@
 const sql = require("mssql");
 const config = require("../config/dbConfig");
 
-
-
-
 const get_entretien_vehicule = async (req, res) => {
   try {
     const pool = await sql.connect(config);
@@ -18,13 +15,14 @@ const get_entretien_vehicule = async (req, res) => {
       Immatriculation: "F091IMMAT.F091IMMA",
       marque: "PARC_CLIENT.[Marque/modele]",
       MontantHT: "F410LIG.F410MTHT",
-      LibelleLigne: "F410LIG.F410LIB"
+      LibelleLigne: "F410LIG.F410LIB",
     };
 
     // Get the sort field from the frontend query, or use the default
-    const sortField = req.query.sortField && columnMapping[req.query.sortField] 
-      ? columnMapping[req.query.sortField] 
-      : "PARC_CLIENT.[Contrat]";
+    const sortField =
+      req.query.sortField && columnMapping[req.query.sortField]
+        ? columnMapping[req.query.sortField]
+        : "PARC_CLIENT.[Contrat]";
     const sortOrder = req.query.sortOrder || "desc";
 
     // Get search parameters
@@ -39,7 +37,7 @@ const get_entretien_vehicule = async (req, res) => {
       "(F400EVT.K400030AGE >= '')",
       "(F400EVT.K400030AGE <= 'zzzzzzzzzz')",
       "(F410LIG.F410MTHT <> 0.00000000)",
-      "(F091IMMAT.F091IMMA IS NOT NULL)"
+      "(F091IMMAT.F091IMMA IS NOT NULL)",
     ];
 
     if (clientSearch) {
@@ -47,7 +45,9 @@ const get_entretien_vehicule = async (req, res) => {
     }
 
     if (immatriculationSearch) {
-      whereConditions.push(`F091IMMAT.F091IMMA LIKE '%${immatriculationSearch}%'`);
+      whereConditions.push(
+        `F091IMMAT.F091IMMA LIKE '%${immatriculationSearch}%'`
+      );
     }
 
     if (req.query.filters) {
@@ -57,7 +57,7 @@ const get_entretien_vehicule = async (req, res) => {
           const filterConditions = filters.map((filter) => {
             const { field, operator, value } = filter;
             const dbField = columnMapping[field] || field;
-            
+
             switch (operator) {
               case "contains":
                 return `${dbField} LIKE '%${value}%'`;
@@ -86,9 +86,10 @@ const get_entretien_vehicule = async (req, res) => {
       }
     }
 
-    const whereClause = whereConditions.length > 0 
-      ? `WHERE ${whereConditions.join(" AND ")}` 
-      : "";
+    const whereClause =
+      whereConditions.length > 0
+        ? `WHERE ${whereConditions.join(" AND ")}`
+        : "";
 
     // Get summary data
     const summaryQuery = `
@@ -134,13 +135,14 @@ const get_entretien_vehicule = async (req, res) => {
     // Execute both queries in parallel
     const [summaryResult, dataResult] = await Promise.all([
       pool.request().query(summaryQuery),
-      pool.request().query(dataQuery)
+      pool.request().query(dataQuery),
     ]);
 
     const summary = summaryResult.recordset[0];
-    const montantMoyen = summary.totalEntretiens > 0 
-      ? summary.totalMontantHT / summary.totalEntretiens 
-      : 0;
+    const montantMoyen =
+      summary.totalEntretiens > 0
+        ? summary.totalMontantHT / summary.totalEntretiens
+        : 0;
 
     res.json({
       items: dataResult.recordset,
@@ -149,8 +151,8 @@ const get_entretien_vehicule = async (req, res) => {
         totalMontantHT: summary.totalMontantHT || 0,
         totalEntretiens: summary.totalEntretiens || 0,
         montantMoyen: montantMoyen || 0,
-        uniqueMarques: summary.uniqueMarques || 0
-      }
+        uniqueMarques: summary.uniqueMarques || 0,
+      },
     });
   } catch (error) {
     console.error("Database error:", error);
@@ -181,7 +183,13 @@ const get_entretien_vehicule = async (req, res) => {
 
 const get_all_entretien = async (req, res) => {
   try {
-    const { nom_client, date_debut, date_fin, page = 1, pageSize = 50 } = req.query;
+    const {
+      nom_client,
+      date_debut,
+      date_fin,
+      page = 1,
+      pageSize = 50,
+    } = req.query;
     const pool = await sql.connect(config);
 
     // Calcul de l'offset pour la pagination
@@ -199,9 +207,10 @@ const get_all_entretien = async (req, res) => {
       whereConditions.push(`F400FACDT <= '${date_fin}'`);
     }
 
-    const whereClause = whereConditions.length > 0 
-      ? `WHERE ${whereConditions.join(' AND ')}` 
-      : '';
+    const whereClause =
+      whereConditions.length > 0
+        ? `WHERE ${whereConditions.join(" AND ")}`
+        : "";
 
     // Requête pour les données paginées
     const dataQuery = `
@@ -228,18 +237,21 @@ const get_all_entretien = async (req, res) => {
     `;
 
     const [dataResult, summaryResult] = await Promise.all([
-      pool.request()
-        .input("nom_client", sql.VarChar, nom_client || '')
+      pool
+        .request()
+        .input("nom_client", sql.VarChar, nom_client || "")
         .query(dataQuery),
-      pool.request()
-        .input("nom_client", sql.VarChar, nom_client || '')
-        .query(summaryQuery)
+      pool
+        .request()
+        .input("nom_client", sql.VarChar, nom_client || "")
+        .query(summaryQuery),
     ]);
 
     const summary = summaryResult.recordset[0];
-    const montantMoyen = summary.totalEntretiens > 0 
-      ? summary.totalMontant / summary.totalEntretiens 
-      : 0;
+    const montantMoyen =
+      summary.totalEntretiens > 0
+        ? summary.totalMontant / summary.totalEntretiens
+        : 0;
 
     res.json({
       items: dataResult.recordset,
@@ -248,8 +260,8 @@ const get_all_entretien = async (req, res) => {
         totalMontant: summary.totalMontant || 0,
         totalEntretiens: summary.totalEntretiens || 0,
         montantMoyen: montantMoyen || 0,
-        uniqueVehiclesCount: summary.uniqueVehiclesCount || 0
-      }
+        uniqueVehiclesCount: summary.uniqueVehiclesCount || 0,
+      },
     });
   } catch (error) {
     console.error("Error fetching client data:", error);
@@ -259,7 +271,13 @@ const get_all_entretien = async (req, res) => {
 
 const get_entretien_matricule = async (req, res) => {
   try {
-    const { matricule, dateDebut, dateFin, page = 1, pageSize = 50 } = req.query;
+    const {
+      matricule,
+      dateDebut,
+      dateFin,
+      page = 1,
+      pageSize = 50,
+    } = req.query;
     const pool = await sql.connect(config);
 
     // Calcul de l'offset pour la pagination
@@ -271,20 +289,21 @@ const get_entretien_matricule = async (req, res) => {
 
     if (matricule && matricule.trim() !== "") {
       whereConditions.push(`F091IMMAT.F091IMMA LIKE @matricule`);
-      request.input('matricule', sql.VarChar, `%${matricule}%`);
+      request.input("matricule", sql.VarChar, `%${matricule}%`);
     }
     if (dateDebut) {
       whereConditions.push(`F400EVT.F400FACDT >= @dateDebut`);
-      request.input('dateDebut', sql.Date, dateDebut);
+      request.input("dateDebut", sql.Date, dateDebut);
     }
     if (dateFin) {
       whereConditions.push(`F400EVT.F400FACDT <= @dateFin`);
-      request.input('dateFin', sql.Date, dateFin);
+      request.input("dateFin", sql.Date, dateFin);
     }
 
-    const whereClause = whereConditions.length > 0 
-      ? `WHERE ${whereConditions.join(' AND ')}` 
-      : '';
+    const whereClause =
+      whereConditions.length > 0
+        ? `WHERE ${whereConditions.join(" AND ")}`
+        : "";
 
     // Requête pour les données paginées
     const dataQuery = `
@@ -328,20 +347,21 @@ const get_entretien_matricule = async (req, res) => {
     `;
 
     // Ajout des paramètres pour la pagination
-    request.input('offset', sql.Int, offset);
-    request.input('offsetEnd', sql.Int, offset + parseInt(pageSize));
+    request.input("offset", sql.Int, offset);
+    request.input("offsetEnd", sql.Int, offset + parseInt(pageSize));
 
     // Exécuter les deux requêtes en parallèle
     const [dataResult, summaryResult] = await Promise.all([
       request.query(dataQuery),
-      request.query(summaryQuery)
+      request.query(summaryQuery),
     ]);
 
     // Traiter les résultats des statistiques
     const summary = summaryResult.recordset[0];
-    const montantMoyen = summary.totalEntretiens > 0 
-      ? summary.totalMontant / summary.totalEntretiens 
-      : 0;
+    const montantMoyen =
+      summary.totalEntretiens > 0
+        ? summary.totalMontant / summary.totalEntretiens
+        : 0;
 
     // Renvoyer les résultats formatés
     res.json({
@@ -351,12 +371,14 @@ const get_entretien_matricule = async (req, res) => {
         totalMontant: summary.totalMontant || 0,
         totalEntretiens: summary.totalEntretiens || 0,
         montantMoyen: montantMoyen || 0,
-        uniqueVehiclesCount: summary.uniqueVehiclesCount || 0
-      }
+        uniqueVehiclesCount: summary.uniqueVehiclesCount || 0,
+      },
     });
   } catch (error) {
     console.error("Error fetching entretien data:", error);
-    res.status(500).json({ error: "Erreur lors de la récupération des données d'entretien" });
+    res.status(500).json({
+      error: "Erreur lors de la récupération des données d'entretien",
+    });
   }
 };
 
