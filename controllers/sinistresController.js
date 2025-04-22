@@ -29,6 +29,10 @@ const getSinistre_lastmonth = async (req, res) => {
   }
 };
 
+
+
+
+
 const get_charge_sinistre = async (req, res) => {
   try {
     const pool = await sql.connect(config);
@@ -203,6 +207,11 @@ const get_charge_sinistre = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+
+
+
+
 
 // For Type_Acc distribution with filters
 const get_sinistres_by_type_acc = async (req, res) => {

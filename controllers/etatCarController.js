@@ -115,6 +115,12 @@ const get_car_attente = async (req, res) => {
   }
 };
 
+
+
+
+
+
+
 const get_position_car = async (req, res) => {
   try {
     const pool = await sql.connect(config);
@@ -129,19 +135,172 @@ const get_position_car = async (req, res) => {
   }
 };
 
+
+
+
 const get_all_positions = async (req, res) => {
   try {
+    const { 
+      page = 1, 
+      pageSize = 50, 
+      sort = '',
+      filter = '',
+      search = '',
+      code 
+    } = req.query;
+
     const pool = await sql.connect(config);
-    const result = await pool
-      .request()
-      .query(
-        "SELECT TOP 5000 MS.F901MSG, MV.[F570DTDEP],MV.[F570DTARR],MV.[F570KMDEP],MV.[K570T58POS],MV.[K570090UNI],PARC.F090LIB FROM F570MVT MV INNER JOIN FT58POS PS ON MV.K570T58POS = PS.FT58KY INNER JOIN F901MSG MS ON PS.LT58901MSG = MS.F901NUM inner join F090PARC PARC on MV.K570090UNI = PARC.F090KY  WHERE MV.F570DTDEP < CURRENT_TIMESTAMP and MV.F570DTARR > CURRENT_TIMESTAMP AND MS.F901LNG ='001' ORDER BY F570DTDEP DESC ;"
-      );
-    res.json(result.recordset);
+    const request = pool.request();
+
+    // Base query with ROW_NUMBER() for pagination
+    let query = `
+      WITH PaginatedData AS (
+        SELECT 
+          MS.F901MSG as Code_position,
+          MV.[F570DTDEP] as Date_depart,
+          MV.[F570DTARR] as Date_arrivee,
+          MV.[F570KMDEP] as Km_depart,
+          MV.[K570090UNI] as Code_vehicule,
+          PARC.F090LIB as Marque,
+          ROW_NUMBER() OVER (`;
+
+    // Add sorting
+    const columnMappings = {
+      'Code_position': 'MS.F901MSG',
+      'Date_depart': 'MV.F570DTDEP',
+      'Date_arrivee': 'MV.F570DTARR',
+      'Km_depart': 'MV.F570KMDEP',
+      'Code_vehicule': 'MV.K570090UNI',
+      'Marque': 'PARC.F090LIB'
+    };
+
+    if (sort) {
+      const [field, direction] = sort.split(':');
+      if (field && columnMappings[field]) {
+        query += ` ORDER BY ${columnMappings[field]} ${direction?.toUpperCase() === 'DESC' ? 'DESC' : 'ASC'}`;
+      } else {
+        query += ` ORDER BY MV.F570DTDEP DESC`;
+      }
+    } else {
+      query += ` ORDER BY MV.F570DTDEP DESC`;
+    }
+
+    query += `) as RowNum,
+          COUNT(*) OVER() as total_count
+        FROM F570MVT MV 
+        INNER JOIN FT58POS PS ON MV.K570T58POS = PS.FT58KY 
+        INNER JOIN F901MSG MS ON PS.LT58901MSG = MS.F901NUM 
+        INNER JOIN F090PARC PARC on MV.K570090UNI = PARC.F090KY
+        WHERE MV.F570DTDEP < CURRENT_TIMESTAMP 
+        AND MV.F570DTARR > CURRENT_TIMESTAMP 
+        AND MS.F901LNG = '001'
+    `;
+
+    // Add code filter if provided
+    if (code) {
+      query += ` AND PS.FT58KY = @code`;
+      request.input('code', sql.VarChar, code);
+    }
+
+    // Add search by marque if provided
+    if (search) {
+      query += ` AND PARC.F090LIB LIKE @search`;
+      request.input('search', sql.VarChar, `%${search}%`);
+    }
+
+    // Add filters if provided
+    if (filter) {
+      const filters = filter.split(',').filter(f => f);
+      filters.forEach((filterItem, index) => {
+        const [field, operator, value] = filterItem.split(':');
+        const paramName = `filter${index}`;
+        
+        if (field && operator && value && columnMappings[field]) {
+          const dbField = columnMappings[field];
+          
+          switch (operator) {
+            case 'contains':
+              query += ` AND ${dbField} LIKE @${paramName}`;
+              request.input(paramName, sql.VarChar, `%${value}%`);
+              break;
+            case 'equals':
+              query += ` AND ${dbField} = @${paramName}`;
+              request.input(paramName, sql.VarChar, value);
+              break;
+            case 'startsWith':
+              query += ` AND ${dbField} LIKE @${paramName}`;
+              request.input(paramName, sql.VarChar, `${value}%`);
+              break;
+            case 'endsWith':
+              query += ` AND ${dbField} LIKE @${paramName}`;
+              request.input(paramName, sql.VarChar, `%${value}`);
+              break;
+            case 'isEmpty':
+              query += ` AND ${dbField} IS NULL OR ${dbField} = ''`;
+              break;
+            case 'isNotEmpty':
+              query += ` AND ${dbField} IS NOT NULL AND ${dbField} <> ''`;
+              break;
+            case 'isAnyOf':
+              const values = value.split('|');
+              query += ` AND ${dbField} IN (${values.map((_, i) => `@${paramName}_${i}`).join(',')})`;
+              values.forEach((val, i) => request.input(`${paramName}_${i}`, sql.VarChar, val));
+              break;
+            // Date and numeric operators
+            case 'after':
+            case '>':
+              query += ` AND ${dbField} > @${paramName}`;
+              request.input(paramName, field.includes('Date') ? sql.DateTime : sql.Float, 
+                field.includes('Date') ? new Date(value) : parseFloat(value));
+              break;
+            case 'before':
+            case '<':
+              query += ` AND ${dbField} < @${paramName}`;
+              request.input(paramName, field.includes('Date') ? sql.DateTime : sql.Float,
+                field.includes('Date') ? new Date(value) : parseFloat(value));
+              break;
+          }
+        }
+      });
+    }
+
+    // Close the CTE and add pagination
+    const offset = (parseInt(page) - 1) * parseInt(pageSize);
+    query += `) SELECT * FROM PaginatedData WHERE RowNum > @offset AND RowNum <= @offsetEnd`;
+    
+    request.input('offset', sql.Int, offset);
+    request.input('offsetEnd', sql.Int, offset + parseInt(pageSize));
+
+    const result = await request.query(query);
+
+    // Get total count from the first row
+    const totalCount = result.recordset[0]?.total_count || 0;
+
+    res.json({
+      items: result.recordset,
+      total: totalCount
+    });
   } catch (error) {
+    console.error('Error:', error);
     res.status(500).send(error.message);
   }
 };
+
+
+
+// const get_all_positions = async (req, res) => {
+//   try {
+//     const pool = await sql.connect(config);
+//     const result = await pool
+//       .request()
+//       .query(
+//         "SELECT MS.F901MSG as Code_position, MV.[F570DTDEP] as Date_depart,MV.[F570DTARR] as Date_arrivee,MV.[F570KMDEP] as Km_depart,MV.[K570T58POS] as Code_position,MV.[K570090UNI] as Code_vehicule,PARC.F090LIB as Marque FROM F570MVT MV INNER JOIN FT58POS PS ON MV.K570T58POS = PS.FT58KY INNER JOIN F901MSG MS ON PS.LT58901MSG = MS.F901NUM inner join F090PARC PARC on MV.K570090UNI = PARC.F090KY  WHERE MV.F570DTDEP < CURRENT_TIMESTAMP and MV.F570DTARR > CURRENT_TIMESTAMP AND MS.F901LNG ='001' ORDER BY F570DTDEP DESC ;"
+//       );
+//     res.json(result.recordset);
+//   } catch (error) {
+//     res.status(500).send(error.message);
+//   }
+// };
 
 module.exports = {
   get_car_dispo,

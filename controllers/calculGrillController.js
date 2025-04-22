@@ -143,6 +143,10 @@ const getTopClient = async (req, res) => {
 //     res.status(500).send(error.message);
 //   }
 // };
+
+
+
+
 const getMargeParClient = async (req, res) => {
   try {
     const pool = await sql.connect(config);
@@ -152,53 +156,108 @@ const getMargeParClient = async (req, res) => {
     const limit = parseInt(req.query.limit) || 50;
     const search = req.query.search || "";
     const isExport = req.query.export === "true";
+    const filters = req.query.filters ? JSON.parse(req.query.filters) : [];
+    const sortField = req.query.sortField;
+    const sortOrder = req.query.sortOrder?.toUpperCase() || 'DESC';
 
     // Calcul de l'offset pour la pagination
     const offset = (page - 1) * limit;
 
     // Construire la requête de base
     let whereClause = "WHERE 1=1";
+    let parameters = {};
+    let parameterIndex = 0;
 
     // Ajouter la condition de recherche si nécessaire
     if (search) {
       whereClause += ` AND [Nom client] LIKE @search`;
+      parameters.search = `%${search}%`;
+    }
+
+    // Traitement des filtres
+    if (filters && filters.length > 0) {
+      filters.forEach((filter, index) => {
+        const paramName = `filter${index}`;
+        switch (filter.operator) {
+          case 'equals':
+            whereClause += ` AND [${filter.field}] = @${paramName}`;
+            parameters[paramName] = filter.value;
+            break;
+          case 'contains':
+            whereClause += ` AND [${filter.field}] LIKE @${paramName}`;
+            parameters[paramName] = `%${filter.value}%`;
+            break;
+          case 'startsWith':
+            whereClause += ` AND [${filter.field}] LIKE @${paramName}`;
+            parameters[paramName] = `${filter.value}%`;
+            break;
+          case 'endsWith':
+            whereClause += ` AND [${filter.field}] LIKE @${paramName}`;
+            parameters[paramName] = `%${filter.value}`;
+            break;
+          case 'isEmpty':
+            whereClause += ` AND ([${filter.field}] IS NULL OR [${filter.field}] = '')`;
+            break;
+          case 'isNotEmpty':
+            whereClause += ` AND [${filter.field}] IS NOT NULL AND [${filter.field}] <> ''`;
+            break;
+          case 'isAnyOf':
+            if (Array.isArray(filter.value)) {
+              whereClause += ` AND [${filter.field}] IN (${filter.value.map((_, i) => `@${paramName}${i}`).join(',')})`;
+              filter.value.forEach((val, i) => {
+                parameters[`${paramName}${i}`] = val;
+              });
+            }
+            break;
+          // Numeric comparisons
+          case '>':
+            whereClause += ` AND [${filter.field}] > @${paramName}`;
+            parameters[paramName] = filter.value;
+            break;
+          case '>=':
+            whereClause += ` AND [${filter.field}] >= @${paramName}`;
+            parameters[paramName] = filter.value;
+            break;
+          case '<':
+            whereClause += ` AND [${filter.field}] < @${paramName}`;
+            parameters[paramName] = filter.value;
+            break;
+          case '<=':
+            whereClause += ` AND [${filter.field}] <= @${paramName}`;
+            parameters[paramName] = filter.value;
+            break;
+        }
+      });
     }
 
     // Pour l'export, on récupère toutes les données sans pagination
     if (isExport) {
       const query = `
-        SELECT [Parc], [Nom client], [LOYER], [MARGE], CAST([RNL] * 100 AS DECIMAL(10,2)) as RNL
+        SELECT 
+          [Parc], 
+          [Nom client], 
+          [LOYER], 
+          [MARGE], 
+          CAST([RNL] * 100 AS DECIMAL(10,2)) as RNL
         FROM [AlocproProd].[dbo].[calc_grille_offre_rnl]
         ${whereClause}
-        ORDER BY MARGE DESC
+        ${sortField ? `ORDER BY [${sortField}] ${sortOrder}` : 'ORDER BY MARGE DESC'}
       `;
 
       const request = pool.request();
-      if (search) {
-        request.input("search", `%${search}%`);
-      }
+      // Add parameters to request
+      Object.keys(parameters).forEach(key => {
+        request.input(key, parameters[key]);
+      });
 
       const result = await request.query(query);
-      const distinctParcs = new Set(result.recordset.map((row) => row.Parc))
-        .size;
+
       // Calculer les totaux pour l'export
       const totals = {
-        totalLoyer: result.recordset.reduce(
-          (sum, row) => sum + (row.LOYER || 0),
-          0
-        ),
-        totalMarge: result.recordset.reduce(
-          (sum, row) => sum + (row.MARGE || 0),
-          0
-        ),
-        totalRNL: result.recordset.reduce(
-          (sum, row) => sum + (row.RNL || 0),
-          0
-        ),
-        totalParcs: result.recordset.reduce(
-          (sum, row) => sum + (row.Parc || 0),
-          0
-        ),
+        totalLoyer: result.recordset.reduce((sum, row) => sum + (row.LOYER || 0), 0),
+        totalMarge: result.recordset.reduce((sum, row) => sum + (row.MARGE || 0), 0),
+        totalRNL: result.recordset.reduce((sum, row) => sum + (row.RNL || 0), 0),
+        totalParcs: result.recordset.reduce((sum, row) => sum + (row.Parc || 0), 0),
       };
 
       return res.json({
@@ -208,6 +267,7 @@ const getMargeParClient = async (req, res) => {
       });
     }
 
+    // Get total count with filters
     const countQuery = `
       SELECT COUNT(*) as total 
       FROM [AlocproProd].[dbo].[calc_grille_offre_rnl]
@@ -215,14 +275,15 @@ const getMargeParClient = async (req, res) => {
     `;
 
     const countRequest = pool.request();
-    if (search) {
-      countRequest.input("search", `%${search}%`);
-    }
+    // Add parameters to request
+    Object.keys(parameters).forEach(key => {
+      countRequest.input(key, parameters[key]);
+    });
 
     const countResult = await countRequest.query(countQuery);
     const total = countResult.recordset[0].total;
 
-    // 2. Calcul des totaux sur l'ensemble des données
+    // Calculate totals with filters
     const totalsQuery = `
       SELECT 
         SUM([LOYER]) as totalLoyer,
@@ -234,14 +295,15 @@ const getMargeParClient = async (req, res) => {
     `;
 
     const totalsRequest = pool.request();
-    if (search) {
-      totalsRequest.input("search", `%${search}%`);
-    }
+    // Add parameters to request
+    Object.keys(parameters).forEach(key => {
+      totalsRequest.input(key, parameters[key]);
+    });
 
     const totalsResult = await totalsRequest.query(totalsQuery);
     const totals = totalsResult.recordset[0];
 
-    // 3. Données de la page actuelle - utilisation de ROW_NUMBER() au lieu de OFFSET/FETCH
+    // Get paginated data with filters and sorting
     const dataQuery = `
       WITH NumberedResults AS (
         SELECT 
@@ -250,7 +312,7 @@ const getMargeParClient = async (req, res) => {
           [LOYER], 
           [MARGE], 
           CAST([RNL] * 100 AS DECIMAL(10,2)) as RNL,
-          ROW_NUMBER() OVER (ORDER BY MARGE DESC) AS RowNum
+          ROW_NUMBER() OVER (${sortField ? `ORDER BY [${sortField}] ${sortOrder}` : 'ORDER BY MARGE DESC'}) AS RowNum
         FROM [AlocproProd].[dbo].[calc_grille_offre_rnl]
         ${whereClause}
       )
@@ -265,13 +327,14 @@ const getMargeParClient = async (req, res) => {
     `;
 
     const dataRequest = pool.request();
-    if (search) {
-      dataRequest.input("search", `%${search}%`);
-    }
+    // Add parameters to request
+    Object.keys(parameters).forEach(key => {
+      dataRequest.input(key, parameters[key]);
+    });
 
     const dataResult = await dataRequest.query(dataQuery);
 
-    // Retourner les données, les totaux et le nombre total pour la pagination
+    // Return data with pagination info
     res.json({
       data: dataResult.recordset,
       total: total,
