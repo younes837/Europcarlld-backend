@@ -9,9 +9,8 @@ const get_entretien_vehicule = async (req, res) => {
     const offset = (page - 1) * pageSize;
 
     // Define column mapping between frontend and database
-    // Use quoted identifiers for columns with spaces or special characters
     const columnMapping = {
-      Contrat: "PARC_CLIENT.[Contrat]", // Note the brackets for column names with spaces
+      Contrat: "PARC_CLIENT.[Contrat]",
       NomClient: "PARC_CLIENT.F050NOMPRE",
       Immatriculation: "F091IMMAT.F091IMMA",
       marque: "PARC_CLIENT.[Marque/modele]",
@@ -40,13 +39,9 @@ const get_entretien_vehicule = async (req, res) => {
       "(F410LIG.F410MTHT <> 0.00000000)",
       "(F091IMMAT.F091IMMA IS NOT NULL)",
     ];
-    
-    // Create parameter collection for parameterized queries
-    const request = pool.request();
-    
+
     if (clientSearch) {
-      request.input('clientSearch', `%${clientSearch}%`);
-      whereConditions.push("PARC_CLIENT.F050NOMPRE LIKE @clientSearch");
+      whereConditions.push(`PARC_CLIENT.F050NOMPRE LIKE '%${clientSearch}%'`);
     }
 
     if (immatriculationSearch) {
@@ -59,47 +54,32 @@ const get_entretien_vehicule = async (req, res) => {
       try {
         const filters = JSON.parse(req.query.filters);
         if (filters.length > 0) {
-          filters.forEach((filter, index) => {
+          const filterConditions = filters.map((filter) => {
             const { field, operator, value } = filter;
             const dbField = columnMapping[field] || field;
+
             switch (operator) {
               case "contains":
-                request.input(paramName, `%${value}%`);
-                whereConditions.push(`${dbField} LIKE @${paramName}`);
-                break;
+                return `${dbField} LIKE '%${value}%'`;
               case "equals":
-                request.input(paramName, value);
-                whereConditions.push(`${dbField} = @${paramName}`);
-                break;
+                return `${dbField} = '${value}'`;
               case "startsWith":
-                request.input(paramName, `${value}%`);
-                whereConditions.push(`${dbField} LIKE @${paramName}`);
-                break;
+                return `${dbField} LIKE '${value}%'`;
               case "endsWith":
-                request.input(paramName, `%${value}`);
-                whereConditions.push(`${dbField} LIKE @${paramName}`);
-                break;
+                return `${dbField} LIKE '%${value}'`;
               case ">":
-                request.input(paramName, value);
-                whereConditions.push(`${dbField} > @${paramName}`);
-                break;
+                return `${dbField} > '${value}'`;
               case "<":
-                request.input(paramName, value);
-                whereConditions.push(`${dbField} < @${paramName}`);
-                break;
+                return `${dbField} < '${value}'`;
               case ">=":
-                request.input(paramName, value);
-                whereConditions.push(`${dbField} >= @${paramName}`);
-                break;
+                return `${dbField} >= '${value}'`;
               case "<=":
-                request.input(paramName, value);
-                whereConditions.push(`${dbField} <= @${paramName}`);
-                break;
+                return `${dbField} <= '${value}'`;
               default:
-                request.input(paramName, value);
-                whereConditions.push(`${dbField} = @${paramName}`);
+                return `${dbField} = '${value}'`;
             }
           });
+          whereConditions.push(...filterConditions);
         }
       } catch (e) {
         console.error("Error parsing filters:", e);
@@ -111,79 +91,45 @@ const get_entretien_vehicule = async (req, res) => {
         ? `WHERE ${whereConditions.join(" AND ")}`
         : "";
 
-    // Modified query that works correctly with SQL Server 2008 R2
+    // Get summary data
+    const summaryQuery = `
+      SELECT 
+        SUM(F410LIG.F410MTHT) as totalMontantHT,
+        COUNT(*) as totalEntretiens,
+        COUNT(DISTINCT PARC_CLIENT.[Marque/modele]) as uniqueMarques
+      FROM dbo.F090PARC AS F090PARC 
+      LEFT OUTER JOIN dbo.F091IMMAT AS F091IMMAT ON F090PARC.K090091IMM = F091IMMAT.F091KY 
+      FULL OUTER JOIN dbo.F410LIG AS F410LIG ON F090PARC.F090KY = F410LIG.K410090UNI 
+      FULL OUTER JOIN dbo.REVI 
+      INNER JOIN dbo.F400EVT AS F400EVT ON dbo.REVI.F400NMDOC = F400EVT.F400NMDOC 
+      ON F410LIG.K410400EVT = F400EVT.F400KY
+      right join PARC_CLIENT on F091IMMAT.F091IMMA = PARC_CLIENT.[Matricule]
+      ${whereClause}
+    `;
+
+    // Get paginated data
     const dataQuery = `
-      WITH FilteredData AS (
+      WITH PaginatedData AS (
         SELECT 
+          ROW_NUMBER() OVER (ORDER BY ${sortField} ${sortOrder}) as id,
           PARC_CLIENT.[Contrat] as Contrat,
           PARC_CLIENT.F050NOMPRE as NomClient,
           F091IMMAT.F091IMMA as Immatriculation,
           PARC_CLIENT.[Marque/modele] as marque,
           F410LIG.F410MTHT as MontantHT,
           F410LIG.F410LIB as LibelleLigne
-        FROM dbo.F410LIG WITH (NOLOCK)
-        INNER JOIN dbo.F400EVT WITH (NOLOCK) ON F410LIG.K410400EVT = F400EVT.F400KY
-        INNER JOIN dbo.F090PARC WITH (NOLOCK) ON F090PARC.F090KY = F410LIG.K410090UNI
-        INNER JOIN dbo.F091IMMAT WITH (NOLOCK) ON F090PARC.K090091IMM = F091IMMAT.F091KY
-        INNER JOIN PARC_CLIENT WITH (NOLOCK) ON F091IMMAT.F091IMMA = PARC_CLIENT.[Matricule]
+        FROM dbo.F090PARC AS F090PARC 
+        LEFT OUTER JOIN dbo.F091IMMAT AS F091IMMAT ON F090PARC.K090091IMM = F091IMMAT.F091KY 
+        FULL OUTER JOIN dbo.F410LIG AS F410LIG ON F090PARC.F090KY = F410LIG.K410090UNI 
+        FULL OUTER JOIN dbo.REVI 
+        INNER JOIN dbo.F400EVT AS F400EVT ON dbo.REVI.F400NMDOC = F400EVT.F400NMDOC 
+        ON F410LIG.K410400EVT = F400EVT.F400KY
+        right join PARC_CLIENT on F091IMMAT.F091IMMA = PARC_CLIENT.[Matricule]
         ${whereClause}
       )
-      SELECT 
-        ROW_NUMBER() OVER (ORDER BY ${sortField} ${sortOrder}) as id,
-        Contrat,
-        NomClient,
-        Immatriculation,
-        marque,
-        MontantHT,
-        LibelleLigne
-      FROM FilteredData
-      ORDER BY ${sortField} ${sortOrder}
-      OFFSET ${offset} ROWS
-      FETCH NEXT ${pageSize} ROWS ONLY
-    `;
-
-    // For SQL Server 2008 R2 which doesn't support OFFSET-FETCH syntax, use alternative pagination
-    const dataQuery2008 = `
-      WITH FilteredData AS (
-        SELECT 
-          PARC_CLIENT.[Contrat] as Contrat,
-          PARC_CLIENT.F050NOMPRE as NomClient,
-          F091IMMAT.F091IMMA as Immatriculation,
-          PARC_CLIENT.[Marque/modele] as marque,
-          F410LIG.F410MTHT as MontantHT,
-          F410LIG.F410LIB as LibelleLigne,
-          ROW_NUMBER() OVER(ORDER BY ${sortField} ${sortOrder}) AS RowNum
-        FROM dbo.F410LIG WITH (NOLOCK)
-        INNER JOIN dbo.F400EVT WITH (NOLOCK) ON F410LIG.K410400EVT = F400EVT.F400KY
-        INNER JOIN dbo.F090PARC WITH (NOLOCK) ON F090PARC.F090KY = F410LIG.K410090UNI
-        INNER JOIN dbo.F091IMMAT WITH (NOLOCK) ON F090PARC.K090091IMM = F091IMMAT.F091KY
-        INNER JOIN PARC_CLIENT WITH (NOLOCK) ON F091IMMAT.F091IMMA = PARC_CLIENT.[Matricule]
-        ${whereClause}
-      )
-      SELECT 
-        RowNum as id,
-        Contrat,
-        NomClient,
-        Immatriculation,
-        marque,
-        MontantHT,
-        LibelleLigne
-      FROM FilteredData
-      WHERE RowNum > ${offset} AND RowNum <= ${offset + pageSize}
-    `;
-
-    // Get total count and summary data in a separate query
-    const summaryQuery = `
-      SELECT 
-        COUNT(*) as totalEntretiens,
-        SUM(F410LIG.F410MTHT) as totalMontantHT,
-        COUNT(DISTINCT PARC_CLIENT.[Marque/modele]) as uniqueMarques
-      FROM dbo.F410LIG WITH (NOLOCK)
-      INNER JOIN dbo.F400EVT WITH (NOLOCK) ON F410LIG.K410400EVT = F400EVT.F400KY
-      INNER JOIN dbo.F090PARC WITH (NOLOCK) ON F090PARC.F090KY = F410LIG.K410090UNI
-      INNER JOIN dbo.F091IMMAT WITH (NOLOCK) ON F090PARC.K090091IMM = F091IMMAT.F091KY
-      INNER JOIN PARC_CLIENT WITH (NOLOCK) ON F091IMMAT.F091IMMA = PARC_CLIENT.[Matricule]
-      ${whereClause}
+      SELECT *
+      FROM PaginatedData
+      WHERE id > ${offset} AND id <= ${offset + pageSize}
     `;
 
     // Execute both queries in parallel
@@ -192,7 +138,6 @@ const get_entretien_vehicule = async (req, res) => {
       pool.request().query(dataQuery),
     ]);
 
-    const items = dataResult.recordset;
     const summary = summaryResult.recordset[0];
     const montantMoyen =
       summary.totalEntretiens > 0
@@ -200,7 +145,7 @@ const get_entretien_vehicule = async (req, res) => {
         : 0;
 
     res.json({
-      items: items,
+      items: dataResult.recordset,
       total: summary.totalEntretiens,
       summary: {
         totalMontantHT: summary.totalMontantHT || 0,
