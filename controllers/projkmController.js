@@ -151,8 +151,8 @@ const get_km_projection = async (req, res) => {
           P.Matricule,
           CAST(F.F090KM AS DECIMAL(10, 0)) AS DERNIER_KM,
           CAST(L.F470KMAFF AS DECIMAL(10, 0)) AS KM_AFFECTE,
-          L.F470DTDEP AS DATE_DEPART,
-          L.F470DTARRP AS DATE_FIN,
+          CONVERT(VARCHAR, L.F470DTDEP, 103) AS DATE_DEPART,
+          CONVERT(VARCHAR, L.F470DTARRP, 103) AS DATE_FIN,
           DATEDIFF(DAY, L.F470DTDEP, GETDATE()) AS JOURS_DEP_DEP,
           CASE 
             WHEN L.F470DTARRP IS NOT NULL 
@@ -273,10 +273,10 @@ const get_vidange_projection = async (req, res) => {
           P.Matricule,
           CAST(F.F090KM AS DECIMAL(10, 0)) AS DERNIER_KM,
           CAST(P.KM_AFFECT AS DECIMAL(10, 0)) AS KM_AFFECTE,
-          CAST(P.DD AS DATE) AS DATE_DEPART,
-          CAST(P.DF AS DATE) AS DATE_FIN,
+          CONVERT(VARCHAR, P.DD, 103) AS DATE_DEPART,
+          CONVERT(VARCHAR, P.DF, 103) AS DATE_FIN,
           l.F410VISKM AS km_dernier_vidange, 
-          l.F410VISDT AS dernier_vidange, 
+          CONVERT(VARCHAR, l.F410VISDT, 103) AS dernier_vidange, 
           CASE 
             WHEN DATEDIFF(DAY, P.DD, P.DF) > 0 
             THEN CAST(CAST(F.F090KM AS DECIMAL(10, 0)) / NULLIF(DATEDIFF(DAY, P.DD, GETDATE()), 0) AS DECIMAL(10, 0))

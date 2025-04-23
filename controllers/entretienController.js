@@ -217,7 +217,14 @@ const get_all_entretien = async (req, res) => {
       WITH PaginatedData AS (
         SELECT 
           ROW_NUMBER() OVER (ORDER BY F400FACDT DESC) as id,
-          *
+          [F050NOM],
+          [F090LIB],
+          [F091IMMA],
+          convert(varchar,F400FACDT,103) as F400FACDT,
+          [F400NMDOC],
+          [F410LIB],
+          [F410MTHT],
+          [K410100PRO]
         FROM All_entretien_client(@nom_client)
         ${whereClause}
       )
@@ -316,7 +323,7 @@ const get_entretien_matricule = async (req, res) => {
           F410LIG.F410MTHT,
           F410LIG.K410100PRO, 
           F410LIG.F410LIB,
-          F400EVT.F400FACDT,
+          convert(varchar,F400EVT.F400FACDT,103) as F400FACDT,
           CD.F050NOM
         FROM 
           dbo.F410LIG AS F410LIG 

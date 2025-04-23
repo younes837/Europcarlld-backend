@@ -95,9 +95,22 @@ const getContratLongueDuree = async (req, res) => {
       WITH PaginatedData AS (
         SELECT 
           ROW_NUMBER() OVER (ORDER BY [${sortField}] ${sortOrder}) as id,
-          [client], [CONTRAT], [ETAT], [DUREE], [KM], [loyer ht], [loyer ttc], 
-          [loyer_global], [marque modele], [IMMA], [VR HT], [ACH_PX_HT], 
-          [ACH_PX_TTC], [Date_Debut], [DT ARR Prevue], [F470DTFINPROL]
+          [client], 
+          [CONTRAT], 
+          [ETAT], 
+          [DUREE], 
+          [KM], 
+          [loyer ht], 
+          [loyer ttc], 
+          [loyer_global], 
+          [marque modele], 
+          [IMMA], 
+          [VR HT], 
+          [ACH_PX_HT], 
+          [ACH_PX_TTC], 
+          CONVERT(VARCHAR, [Date_Debut], 103) AS [Date_Debut], 
+          CONVERT(VARCHAR, [DT ARR Prevue], 103) AS [DT ARR Prevue], 
+          CONVERT(VARCHAR, [F470DTFINPROL], 103) AS [F470DTFINPROL]
         FROM [AlocproProd].[dbo].[Contrat longue duree]
         ${whereClause}
       )
@@ -378,9 +391,9 @@ const get_lld_vr = async (req, res) => {
             WHEN F090PARC.F090ACHTVA = 0 THEN NULL 
             ELSE (F470LD.F470VR * 1.2) / (F090PARC.F090ACHPXHT + F090PARC.F090ACHTVA)
         END AS [%],
-        F470LD.F470DTDEP AS Date_Debut,
-        F470LD.F470DTARRP AS date_fin,
-        F470LD.F470DTARR AS fin_reelle,
+        CONVERT(VARCHAR, F470LD.F470DTDEP, 103) AS Date_Debut,
+        CONVERT(VARCHAR, F470LD.F470DTARRP, 103) AS date_fin,
+        CONVERT(VARCHAR, F470LD.F470DTARR, 103) AS fin_reelle,
         vo.prix_vente,
         vo.prix_vente - (F470LD.F470VR * 1.2) AS sessio
       FROM

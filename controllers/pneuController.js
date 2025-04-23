@@ -141,7 +141,7 @@ const get_pneu_consomme = async (req, res) => {
           SUM(COALESCE(PP.F410QT, 0)) AS total_pneu_consommé,
           SUM(COALESCE(PC.F470NBPNEUS, 0)) AS total_pneu_dotation,
           SUM(COALESCE(PP.F410MTHT, 0)) AS total_montant,
-          MIN(PC.DD) AS oldest_contract_date,
+          CONVERT(VARCHAR, MIN(PC.DD), 103) AS oldest_contract_date,
           CASE 
             WHEN COUNT(DISTINCT PC.F091IMMA) > 0 
             THEN CAST(SUM(COALESCE(PP.F410QT, 0)) AS FLOAT) / COUNT(DISTINCT PC.F091IMMA) 
@@ -217,7 +217,7 @@ const get_pneu_consomme_detail = async (req, res) => {
           PP.[F400NMDOC],
           PP.[F410QT],
           PP.[F410VISKM],
-          PP.[F400FACDT],
+          CONVERT(VARCHAR, PP.[F400FACDT], 103) as [F400FACDT],
           PP.[F050NOM]
         FROM [AlocproProd].[dbo].[Pneu_Parc] PP
         INNER JOIN [AlocproProd].[dbo].[PARC_CLIENT] PC 
@@ -269,9 +269,9 @@ const get_old_pneu_kms = async (req, res) => {
         F470CONTRAT,
         PC.F090LIB,
         F090KM,
-        F470DTDEP,
-        F470DTARRP,
-        F470DTARR,
+        convert(varchar,F470DTDEP,103) as F470DTDEP,
+        convert(varchar,F470DTARRP,103) as F470DTARRP,
+        convert(varchar,F470DTARR,103) as F470DTARR,
         F470DUREE,
         F470KMAFF,
         F470NBPNEUS,

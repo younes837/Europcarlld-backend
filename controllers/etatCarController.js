@@ -59,7 +59,7 @@ const get_car_dispo = async (req, res) => {
     const dataQuery = `
       WITH NumberedRows AS (
         SELECT 
-          "F570MVT"."F570DTDEP" as date_depart,
+          convert(varchar,"F570MVT"."F570DTDEP",103) as date_depart,
           "F570MVT"."K570030DEP" as code_agence,
           "Agence_depart"."F030LIB" as agence,
           "F091IMMAT"."F091IMMA" as matricule,
@@ -98,8 +98,16 @@ const get_car_attente = async (req, res) => {
   try {
     const pool = await sql.connect(config);
     const result = await pool.request().query(`
-    SELECT "F470LD"."F470CONTRAT" as contrat, "F090PARC"."F090LIB" as marque, "F091IMMAT"."F091IMMA" as matricule,"F470LD"."F470DTARRP" as date_arrivee, "F050TIERS"."F050NOM" as nom_client,
- "VT37ETA"."F901MSG" as libele, "F050TIERS"."F050KY" as code_client, "F090PARC"."F090INDT" as date_entree, "F470LD"."K470T46TYP" as type,  "F470LD"."F470DTDEP" as date_depart  
+    SELECT "F470LD"."F470CONTRAT" as contrat, 
+    "F090PARC"."F090LIB" as marque, 
+    "F091IMMAT"."F091IMMA" as matricule,
+    convert(varchar,"F470LD"."F470DTARRP",103) as date_arrivee, 
+    "F050TIERS"."F050NOM" as nom_client,
+ "VT37ETA"."F901MSG" as libele, 
+ "F050TIERS"."F050KY" as code_client, 
+ convert(varchar,"F090PARC"."F090INDT",103) as date_entree, 
+ "F470LD"."K470T46TYP" as type,  
+ convert(varchar,"F470LD"."F470DTDEP",103) as date_depart  
  FROM   (((("AlocproProd"."dbo"."F470LD" "F470LD" LEFT OUTER JOIN "AlocproProd"."dbo"."F570MVT" "F570MVT"   
  ON "F470LD"."K470570MVT"="F570MVT"."F570KY") LEFT OUTER JOIN "AlocproProd"."dbo"."F050TIERS" "F050TIERS"   
  ON "F470LD"."K470050TIE"="F050TIERS"."F050KY") LEFT OUTER JOIN "AlocproProd"."dbo"."VT37ETA" "VT37ETA"    
@@ -157,8 +165,8 @@ const get_all_positions = async (req, res) => {
       WITH PaginatedData AS (
         SELECT 
           MS.F901MSG as Code_position,
-          MV.[F570DTDEP] as Date_depart,
-          MV.[F570DTARR] as Date_arrivee,
+          CONVERT(VARCHAR, MV.[F570DTDEP], 103) as Date_depart,
+          CONVERT(VARCHAR, MV.[F570DTARR], 103) as Date_arrivee,
           MV.[F570KMDEP] as Km_depart,
           MV.[K570090UNI] as Code_vehicule,
           PARC.F090LIB as Marque,

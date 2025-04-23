@@ -49,14 +49,14 @@ const get_ca_vehicule = async (req, res) => {
                     [UNITE],
                     [F090LIB],
                     [N_FACTURE],
-                    [DATE_FAC],
+                    convert(varchar,[DATE_FAC],103) as [DATE_FAC],
                     [HT],
                     [TTC],
                     [F091IMMA],
-                    [F570DTDEP],
-                    [F570DTARR],
+                    convert(varchar,[F570DTDEP],103) as [F570DTDEP],
+                    convert(varchar,[F570DTARR],103) as [F570DTARR],
                     [PRIX_ACHAT],
-                    [F090DTMISC]
+                    convert(varchar,[F090DTMISC],103) as [F090DTMISC]
                 FROM [LOCPRO_ALSYS].[dbo].[ca_voiture]
                 ${whereClause}
             )

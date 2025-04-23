@@ -136,8 +136,8 @@ const get_charge_sinistre = async (req, res) => {
         SELECT 
           ROW_NUMBER() OVER (ORDER BY ${sortField} ${sortOrder}) as id,
           [Num_Sinistre],
-          [Date_Sinistre],
-          [Sinistre_DT_Saisie],
+          CONVERT(VARCHAR, [Date_Sinistre], 103) as [Date_Sinistre],
+          CONVERT(VARCHAR, [Sinistre_DT_Saisie], 103) as [Sinistre_DT_Saisie],
           [Matricule],
           [Marque_Modele] as Marque,
           [Client],
