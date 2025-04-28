@@ -108,9 +108,9 @@ const getContratLongueDuree = async (req, res) => {
           [VR HT], 
           [ACH_PX_HT], 
           [ACH_PX_TTC], 
-          CONVERT(VARCHAR, [Date_Debut], 103) AS [Date_Debut], 
-          CONVERT(VARCHAR, [DT ARR Prevue], 103) AS [DT ARR Prevue], 
-          CONVERT(VARCHAR, [F470DTFINPROL], 103) AS [F470DTFINPROL]
+          CONVERT(VARCHAR, [Date_Debut],   105) AS [Date_Debut], 
+          CONVERT(VARCHAR, [DT ARR Prevue],   105) AS [DT ARR Prevue], 
+          CONVERT(VARCHAR, [F470DTFINPROL],   105) AS [F470DTFINPROL]
         FROM [AlocproProd].[dbo].[Contrat longue duree]
         ${whereClause}
       )
@@ -156,6 +156,24 @@ const gettop_marque = async (req, res) => {
     res.json(result.recordset);
   } catch (error) {
     res.status(500).send(error.message);
+  }
+};
+
+
+const getMostUsedModels = async (req, res) => {
+  try {
+    const pool = await sql.connect(config);
+    const result = await pool.request().query`
+      SELECT [marque modele], COUNT(*) as total 
+      FROM [AlocproProd].[dbo].[Contrat longue duree] 
+      GROUP BY [marque modele] 
+      ORDER BY total DESC
+    `;
+
+    res.status(200).json(result.recordset);
+  } catch (err) {
+    console.error("Database error:", err);
+    res.status(500).json({ error: "Failed to fetch most used models data" });
   }
 };
 
@@ -301,9 +319,6 @@ const get_all_restitutions = async (req, res) => {
   }
 };
 
-// Express.js backend code update for LLD-VR endpoint
-// Express.js backend code update for LLD-VR endpoint
-// Express.js backend code update for LLD-VR endpoint
 const get_lld_vr = async (req, res) => {
   try {
     // Get query parameters for server-side operations
@@ -314,17 +329,9 @@ const get_lld_vr = async (req, res) => {
     const searchQuery = req.query.searchQuery || "";
     const fromDate = req.query.fromDate || "";
     const toDate = req.query.toDate || "";
+    const matricule = req.query.matricule || "";
 
     // Log received parameters for debugging
-    console.log("Received params:", {
-      page,
-      pageSize,
-      sortField,
-      sortDirection,
-      searchQuery,
-      fromDate,
-      toDate,
-    });
 
     // Calculate offset for pagination
     const offset = page * pageSize;
@@ -350,7 +357,12 @@ const get_lld_vr = async (req, res) => {
     // Add client search condition if search query is provided
     if (searchQuery && searchQuery.trim() !== "") {
       whereClause += `
-        AND (TIE.F050NOM + ' ' + TIE.F050PRENOM LIKE '%${searchQuery.trim()}%')
+        AND (TIE.F050NOM + ' ' + TIE.F050PRENOM LIKE '%${searchQuery}%')
+      `;
+    }
+    if (matricule && matricule.trim() !== "") {
+      whereClause += `
+        AND (F091IMMAT.F091IMMA LIKE '%${matricule}%')
       `;
     }
 
@@ -391,9 +403,10 @@ const get_lld_vr = async (req, res) => {
             WHEN F090PARC.F090ACHTVA = 0 THEN NULL 
             ELSE (F470LD.F470VR * 1.2) / (F090PARC.F090ACHPXHT + F090PARC.F090ACHTVA)
         END AS [%],
-        CONVERT(VARCHAR, F470LD.F470DTDEP, 103) AS Date_Debut,
-        CONVERT(VARCHAR, F470LD.F470DTARRP, 103) AS date_fin,
-        CONVERT(VARCHAR, F470LD.F470DTARR, 103) AS fin_reelle,
+
+        CONVERT(VARCHAR, F470LD.F470DTDEP,   105) AS Date_Debut, 
+        CONVERT(VARCHAR, F470LD.F470DTARRP,   105) AS date_fin,
+        CONVERT(VARCHAR, F470LD.F470DTARR,   105) AS fin_reelle,
         vo.prix_vente,
         vo.prix_vente - (F470LD.F470VR * 1.2) AS sessio
       FROM
@@ -501,4 +514,5 @@ module.exports = {
   get_all_productions,
   get_all_restitutions,
   get_lld_vr,
+  getMostUsedModels
 };

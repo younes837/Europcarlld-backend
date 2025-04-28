@@ -104,7 +104,7 @@ const get_commande_encours = async (req, res) => {
         SELECT 
           ROW_NUMBER() OVER (ORDER BY ${sortField} ${sortOrder}) as id,
             F080COMM.F080REF AS NumCommande,
-            CONVERT(VARCHAR, F080COMM.F080DTCOMM, 103) AS DateCommande,
+            CONVERT(VARCHAR, F080COMM.F080DTCOMM,   105) AS DateCommande,
             F080COMM.F080DTLIVFRS AS DateLivraison,
             F050TIERSFRS.F050NOM AS Fournisseur,
             F090PARC.F090LIB AS Marque,

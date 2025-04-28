@@ -11,6 +11,7 @@ const {
   get_all_productions,
   get_all_restitutions,
   get_lld_vr,
+  getMostUsedModels
 } = require("../controllers/contratController");
 
 const router = express.Router();
@@ -26,5 +27,6 @@ router.get("/restitutions", get_restitution_contrat);
 router.get("/all_productions", get_all_productions);
 router.get("/all_restitutions", get_all_restitutions);
 router.get("/lld_vr", get_lld_vr);
+router.get("/modele_plus_utilise", getMostUsedModels);
 
 module.exports = router;

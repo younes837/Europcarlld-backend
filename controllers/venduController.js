@@ -66,7 +66,6 @@ const getTotalVendu_lastYear = async (req,res) => {
 //     res.status(500).send(error.message);
 //   }
 // };
-
 const getVehiculeVendu = async (req, res) => {
   let pool;
   try {
@@ -88,6 +87,7 @@ const getVehiculeVendu = async (req, res) => {
         "LEFT(dbo.WW_DEF.F090LIB, CHARINDEX(' ', dbo.WW_DEF.F090LIB + ' ') - 1)",
       DMC: "dbo.WW_DEF.F090DTMISC",
       DateVente: "dbo.F400EVT.F400FACDT",
+      Position: "dbo.F090PARC.K090T58POS",
       PrixVenteHT: "dbo.F400EVT.F400HT",
       PrixAchatHT: "dbo.WW_DEF.F090ACHPXHT",
       DernierKm: "dbo.F400EVT.F400VISKM",
@@ -102,11 +102,19 @@ const getVehiculeVendu = async (req, res) => {
     // Get search parameter
     const search = req.query.search || "";
 
+    // Get position filter
+    const position = req.query.position;
+
     // Get filter parameters
     const filters = req.query.filters ? JSON.parse(req.query.filters) : [];
 
     // Build WHERE clause
     let whereClause = "(dbo.F400EVT.K400T44TYP = 'VM')";
+
+    // Add position filter if provided
+    if (position) {
+      whereClause += ` AND dbo.F090PARC.K090T58POS = '${position}'`;
+    }
 
     // Add search condition if search term is provided
     if (search) {
@@ -184,9 +192,10 @@ const getVehiculeVendu = async (req, res) => {
           dbo.WW_DEF.F091IMMA AS [Matricule], 
           LEFT(dbo.WW_DEF.F090LIB, CHARINDEX(' ', dbo.WW_DEF.F090LIB + ' ') - 1) AS [Marque], 
           dbo.WW_DEF.F090LIB AS [MarqueModele],
-          CONVERT(VARCHAR, dbo.WW_DEF.F090DTMISC, 103) AS [DMC],  
+          CONVERT(VARCHAR, dbo.WW_DEF.F090DTMISC,   105) AS [DMC],  
           dbo.F400EVT.F400VISKM AS [DernierKm],
-          CONVERT(VARCHAR, dbo.F400EVT.F400FACDT, 103) AS [DateVente], 
+          CONVERT(VARCHAR, dbo.F400EVT.F400FACDT,   105) AS [DateVente],
+          dbo.F090PARC.K090T58POS AS [Position],
           dbo.F400EVT.F400HT AS [PrixVenteHT],
           dbo.WW_DEF.F090ACHPXHT AS [PrixAchatHT], 
           F470LD.F470VR AS [VrHT],  
@@ -221,6 +230,12 @@ const getVehiculeVendu = async (req, res) => {
     res.status(500).send(error.message);
   }
 };
+
+
+
+
+
+
 const getVehiculeVenduStats = async (req, res) => {
   let pool;
   try {

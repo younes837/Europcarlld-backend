@@ -220,7 +220,7 @@ const get_all_entretien = async (req, res) => {
           [F050NOM],
           [F090LIB],
           [F091IMMA],
-          convert(varchar,F400FACDT,103) as F400FACDT,
+          convert(varchar,F400FACDT,  105) as F400FACDT,
           [F400NMDOC],
           [F410LIB],
           [F410MTHT],
@@ -323,7 +323,7 @@ const get_entretien_matricule = async (req, res) => {
           F410LIG.F410MTHT,
           F410LIG.K410100PRO, 
           F410LIG.F410LIB,
-          convert(varchar,F400EVT.F400FACDT,103) as F400FACDT,
+          convert(varchar,F400EVT.F400FACDT,  105) as F400FACDT,
           CD.F050NOM
         FROM 
           dbo.F410LIG AS F410LIG 
