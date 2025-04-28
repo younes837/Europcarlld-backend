@@ -159,7 +159,6 @@ const gettop_marque = async (req, res) => {
   }
 };
 
-
 const getMostUsedModels = async (req, res) => {
   try {
     const pool = await sql.connect(config);
@@ -220,23 +219,42 @@ const get_contrat_actuelle = async (req, res) => {
 const get_production_contrat = async (req, res) => {
   try {
     const pool = await sql.connect(config);
-    const result = await pool
-      .request()
-      .query(
-        "SELECT  YEAR(F470DTDEP) AS Annee ,COUNT(F470CONTRAT) AS NombreContrats FROM  [AlocproProd].[dbo].[Contrat_LLD] WHERE F470DTDEP >= '2016-01-01'GROUP BY YEAR(F470DTDEP)ORDER BY Annee ;"
-      );
+    const result = await pool.request().query(
+      `SELECT     TOP (100) PERCENT year(f470dtdep) as Annee, count(f470contrat) as nombreContrats 
+        FROM        
+          dbo.F570MVT RIGHT OUTER JOIN
+          dbo.F470LD LEFT OUTER JOIN
+          dbo.client INNER JOIN
+          dbo.F050TIERS ON dbo.client.F050KY = dbo.F050TIERS.F050KY ON dbo.F470LD.K470050TIE = dbo.F050TIERS.F050KY ON dbo.F570MVT.F570KY = dbo.F470LD.K470570MVT LEFT OUTER JOIN
+          dbo.F091IMMAT INNER JOIN
+          dbo.F090PARC ON dbo.F091IMMAT.F091KY = dbo.F090PARC.K090091IMM ON dbo.F570MVT.K570090UNI = dbo.F090PARC.F090KY
+      WHERE     (dbo.F470LD.K470T37ETA IN ('9', '3')) AND (dbo.F470LD.K470T05TYP = '1')and (F090PARC.K090T58POS = 'LLD') and F470DTDEP >= '2016-01-01'
+      group by year(f470dtdep)
+      order by Annee`
+    );
     res.json(result.recordset);
   } catch (error) {
     res.status(500).send(error.message);
   }
 };
+
 const get_restitution_contrat = async (req, res) => {
   try {
     const pool = await sql.connect(config);
     const result = await pool
       .request()
       .query(
-        "SELECT  YEAR(F470DTARR) AS Annee ,COUNT(F470CONTRAT) AS NombreContrats FROM  [AlocproProd].[dbo].[Contrat_LLD] WHERE F470DTARR >= '2016-01-01'GROUP BY YEAR(F470DTARR)ORDER BY Annee ;"
+        `SELECT     TOP (100) PERCENT year(f470dtarr) as Annee, count(f470contrat) as nombreContrats 
+        FROM         
+          dbo.F570MVT RIGHT OUTER JOIN
+          dbo.F470LD LEFT OUTER JOIN
+          dbo.client INNER JOIN
+          dbo.F050TIERS ON dbo.client.F050KY = dbo.F050TIERS.F050KY ON dbo.F470LD.K470050TIE = dbo.F050TIERS.F050KY ON dbo.F570MVT.F570KY = dbo.F470LD.K470570MVT LEFT OUTER JOIN
+          dbo.F091IMMAT INNER JOIN
+          dbo.F090PARC ON dbo.F091IMMAT.F091KY = dbo.F090PARC.K090091IMM ON dbo.F570MVT.K570090UNI = dbo.F090PARC.F090KY
+        WHERE     (dbo.F470LD.K470T37ETA IN ('9', '3')) AND (dbo.F470LD.K470T05TYP = '1')and (F090PARC.K090T58POS = 'LLD') and F470DTarr >= '2016-01-01'
+        group by year(f470dtarr)
+        order by Annee`
       );
     res.json(result.recordset);
   } catch (error) {
@@ -514,5 +532,5 @@ module.exports = {
   get_all_productions,
   get_all_restitutions,
   get_lld_vr,
-  getMostUsedModels
+  getMostUsedModels,
 };
