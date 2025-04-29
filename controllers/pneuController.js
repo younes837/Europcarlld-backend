@@ -1,125 +1,212 @@
 const sql = require("mssql");
 const config = require("../config/dbConfig");
 
+// const get_pneu_consomme = async (req, res) => {
+//   try {
+//     const pool = await sql.connect(config);
+
+//     // Get query parameters
+//     const page = parseInt(req.query.page) || 1;
+//     const pageSize = parseInt(req.query.pageSize) || 50;
+//     const offset = (page - 1) * pageSize;
+
+//     // Define column mapping between frontend and database
+//     const columnMapping = {
+//       CLIENT: "PC.F050NOMPRE",
+//       number_of_vehicles: "COUNT(DISTINCT PC.F091IMMA)",
+//       total_pneu_consommé: "SUM(COALESCE(PP.F410QT, 0))",
+//       total_pneu_dotation:
+//         "(SELECT SUM(F470NBPNEUS) FROM [AlocproProd].[dbo].[PARC_CLIENT] PC_sub WHERE PC_sub.F050NOMPRE = PC.F050NOMPRE)",
+//       total_montant: "SUM(COALESCE(PP.F410MTHT, 0))",
+//       oldest_contract_date: "MIN(PC.DD)",
+//       consommation_moyenne:
+//         "CASE WHEN COUNT(DISTINCT PC.F091IMMA) > 0 THEN CAST(SUM(COALESCE(PP.F410QT, 0)) AS FLOAT) / COUNT(DISTINCT PC.F091IMMA) ELSE 0 END",
+//     };
+
+//     // Get the sort field from the frontend query, or use the default if it's invalid
+//     const sortField =
+//       req.query.sortField && columnMapping[req.query.sortField]
+//         ? columnMapping[req.query.sortField]
+//         : "PC.F050NOMPRE";
+//     const sortOrder = req.query.sortOrder || "asc";
+
+//     // Create request object for parameterized queries
+//     const request = pool.request();
+
+//     // Get search parameters
+//     const clientSearch = req.query.clientSearch || "";
+
+//     // Build the WHERE clause for filtering
+//     const whereConditions = [];
+
+//     // Add search conditions with parameters
+//     if (clientSearch) {
+//       request.input('clientSearch', `%${clientSearch}%`);
+//       whereConditions.push(`PC.F050NOMPRE LIKE @clientSearch`);
+//     }
+
+//     // Process DataGrid filters
+//     if (req.query.filters) {
+//       try {
+//         const filters = JSON.parse(req.query.filters);
+//         if (filters.length > 0) {
+//           filters.forEach((filter, index) => {
+//             const { field, operator, value } = filter;
+
+//             // Skip empty values
+//             if (!value && value !== 0) return;
+
+//             const dbField = columnMapping[field] || field;
+//             const paramName = `filter${index}`;
+
+//             switch (operator) {
+//               case "contains":
+//                 request.input(paramName, `%${value}%`);
+//                 whereConditions.push(`${dbField} LIKE @${paramName}`);
+//                 break;
+//               case "equals":
+//                 request.input(paramName, value);
+//                 whereConditions.push(`${dbField} = @${paramName}`);
+//                 break;
+//               case "startsWith":
+//                 request.input(paramName, `${value}%`);
+//                 whereConditions.push(`${dbField} LIKE @${paramName}`);
+//                 break;
+//               case "endsWith":
+//                 request.input(paramName, `%${value}`);
+//                 whereConditions.push(`${dbField} LIKE @${paramName}`);
+//                 break;
+//               case ">":
+//                 request.input(paramName, value);
+//                 whereConditions.push(`${dbField} > @${paramName}`);
+//                 break;
+//               case "<":
+//                 request.input(paramName, value);
+//                 whereConditions.push(`${dbField} < @${paramName}`);
+//                 break;
+//               case ">=":
+//                 request.input(paramName, value);
+//                 whereConditions.push(`${dbField} >= @${paramName}`);
+//                 break;
+//               case "<=":
+//                 request.input(paramName, value);
+//                 whereConditions.push(`${dbField} <= @${paramName}`);
+//                 break;
+//               case "!=":
+//                 request.input(paramName, value);
+//                 whereConditions.push(`${dbField} != @${paramName}`);
+//                 break;
+//               default:
+//                 request.input(paramName, value);
+//                 whereConditions.push(`${dbField} = @${paramName}`);
+//             }
+//           });
+//         }
+//       } catch (e) {
+//         console.error("Error parsing filters:", e);
+//       }
+//     }
+
+//     // Combine all conditions
+//     const whereClause = whereConditions.length > 0
+//       ? `WHERE ${whereConditions.join(" AND ")}`
+//       : "";
+
+//     // Optimize by combining the count and data queries in one database call
+//     // This reduces round trips to the database
+//     const combinedQuery = `
+//       -- Get total record count for pagination
+//       SELECT COUNT(DISTINCT PC.F050NOMPRE) as total_records
+//       FROM [AlocproProd].[dbo].[PARC_CLIENT] PC WITH (NOLOCK)
+//       LEFT JOIN [AlocproProd].[dbo].[Pneu_Parc] PP WITH (NOLOCK) ON PC.F091IMMA = PP.F091IMMA
+//       ${whereClause};
+
+//       -- Get summary totals
+//       SELECT 
+//         COUNT(DISTINCT PC.F050NOMPRE) as total_clients,
+//         COUNT(DISTINCT PC.F091IMMA) as total_vehicles,
+//         SUM(COALESCE(PP.F410QT, 0)) as total_pneus_consommes,
+//         SUM(COALESCE(PC.F470NBPNEUS, 0)) as total_pneus_dotation,
+//         SUM(COALESCE(PP.F410MTHT, 0)) as total_montant
+//       FROM [AlocproProd].[dbo].[PARC_CLIENT] PC WITH (NOLOCK)
+//       LEFT JOIN [AlocproProd].[dbo].[Pneu_Parc] PP WITH (NOLOCK) ON PC.F091IMMA = PP.F091IMMA
+//       ${whereClause};
+      
+//       -- Get paginated data
+//       WITH ClientData AS (
+//         SELECT
+//           PC.F050NOMPRE AS CLIENT,
+//           PC.Client AS code,
+//           COUNT(DISTINCT PC.F091IMMA) AS number_of_vehicles,
+//           SUM(COALESCE(PP.F410QT, 0)) AS total_pneu_consommé,
+//           SUM(COALESCE(PC.F470NBPNEUS, 0)) AS total_pneu_dotation,
+//           SUM(COALESCE(PP.F410MTHT, 0)) AS total_montant,
+//           CONVERT(VARCHAR, MIN(PC.DD),   105) AS oldest_contract_date,
+//           CASE 
+//             WHEN COUNT(DISTINCT PC.F091IMMA) > 0 
+//             THEN CAST(SUM(COALESCE(PP.F410QT, 0)) AS FLOAT) / COUNT(DISTINCT PC.F091IMMA) 
+//             ELSE 0 
+//           END AS consommation_moyenne,
+//           ROW_NUMBER() OVER (ORDER BY ${sortField} ${sortOrder}) AS RowNum
+//         FROM [AlocproProd].[dbo].[PARC_CLIENT] PC WITH (NOLOCK)
+//         LEFT JOIN [AlocproProd].[dbo].[Pneu_Parc] PP WITH (NOLOCK) ON PC.F091IMMA = PP.F091IMMA
+//         ${whereClause}
+//         GROUP BY PC.F050NOMPRE, PC.Client
+//       )
+//       SELECT * FROM ClientData
+//       WHERE RowNum > ${offset} AND RowNum <= ${offset + pageSize}
+//     `;
+
+//     // Execute the combined query
+//     const result = await request.query(combinedQuery);
+
+//     // Extract the different result sets
+//     const totalRecords = result.recordsets[0][0].total_records;
+//     const summaryTotals = result.recordsets[1][0];
+//     const paginatedData = result.recordsets[2];
+
+//     res.json({
+//       items: paginatedData,
+//       total: totalRecords,
+//       totals: {
+//         total_clients: summaryTotals.total_clients || 0,
+//         total_vehicles: summaryTotals.total_vehicles || 0,
+//         total_pneus_consommes: summaryTotals.total_pneus_consommes || 0,
+//         total_pneus_dotation: summaryTotals.total_pneus_dotation || 0,
+//         total_montant: summaryTotals.total_montant || 0
+//       }
+//     });
+//   } catch (error) {
+//     console.error("SQL Error:", error);
+//     res.status(500).send(error.message);
+//   }
+// };
+
+
 const get_pneu_consomme = async (req, res) => {
   try {
     const pool = await sql.connect(config);
 
-    // Get query parameters
-    const page = parseInt(req.query.page) || 1;
-    const pageSize = parseInt(req.query.pageSize) || 50;
-    const offset = (page - 1) * pageSize;
-
-    // Define column mapping between frontend and database
-    const columnMapping = {
-      CLIENT: "PC.F050NOMPRE",
-      number_of_vehicles: "COUNT(DISTINCT PC.F091IMMA)",
-      total_pneu_consommé: "SUM(COALESCE(PP.F410QT, 0))",
-      total_pneu_dotation:
-        "(SELECT SUM(F470NBPNEUS) FROM [AlocproProd].[dbo].[PARC_CLIENT] PC_sub WHERE PC_sub.F050NOMPRE = PC.F050NOMPRE)",
-      total_montant: "SUM(COALESCE(PP.F410MTHT, 0))",
-      oldest_contract_date: "MIN(PC.DD)",
-      consommation_moyenne:
-        "CASE WHEN COUNT(DISTINCT PC.F091IMMA) > 0 THEN CAST(SUM(COALESCE(PP.F410QT, 0)) AS FLOAT) / COUNT(DISTINCT PC.F091IMMA) ELSE 0 END",
-    };
-
-    // Get the sort field from the frontend query, or use the default if it's invalid
-    const sortField =
-      req.query.sortField && columnMapping[req.query.sortField]
-        ? columnMapping[req.query.sortField]
-        : "PC.F050NOMPRE";
-    const sortOrder = req.query.sortOrder || "asc";
-
-    // Create request object for parameterized queries
-    const request = pool.request();
-
-    // Get search parameters
-    const clientSearch = req.query.clientSearch || "";
-
-    // Build the WHERE clause for filtering
-    const whereConditions = [];
-
-    // Add search conditions with parameters
-    if (clientSearch) {
-      request.input('clientSearch', `%${clientSearch}%`);
-      whereConditions.push(`PC.F050NOMPRE LIKE @clientSearch`);
-    }
-
-    // Process DataGrid filters
-    if (req.query.filters) {
-      try {
-        const filters = JSON.parse(req.query.filters);
-        if (filters.length > 0) {
-          filters.forEach((filter, index) => {
-            const { field, operator, value } = filter;
-
-            // Skip empty values
-            if (!value && value !== 0) return;
-
-            const dbField = columnMapping[field] || field;
-            const paramName = `filter${index}`;
-
-            switch (operator) {
-              case "contains":
-                request.input(paramName, `%${value}%`);
-                whereConditions.push(`${dbField} LIKE @${paramName}`);
-                break;
-              case "equals":
-                request.input(paramName, value);
-                whereConditions.push(`${dbField} = @${paramName}`);
-                break;
-              case "startsWith":
-                request.input(paramName, `${value}%`);
-                whereConditions.push(`${dbField} LIKE @${paramName}`);
-                break;
-              case "endsWith":
-                request.input(paramName, `%${value}`);
-                whereConditions.push(`${dbField} LIKE @${paramName}`);
-                break;
-              case ">":
-                request.input(paramName, value);
-                whereConditions.push(`${dbField} > @${paramName}`);
-                break;
-              case "<":
-                request.input(paramName, value);
-                whereConditions.push(`${dbField} < @${paramName}`);
-                break;
-              case ">=":
-                request.input(paramName, value);
-                whereConditions.push(`${dbField} >= @${paramName}`);
-                break;
-              case "<=":
-                request.input(paramName, value);
-                whereConditions.push(`${dbField} <= @${paramName}`);
-                break;
-              case "!=":
-                request.input(paramName, value);
-                whereConditions.push(`${dbField} != @${paramName}`);
-                break;
-              default:
-                request.input(paramName, value);
-                whereConditions.push(`${dbField} = @${paramName}`);
-            }
-          });
-        }
-      } catch (e) {
-        console.error("Error parsing filters:", e);
-      }
-    }
-
-    // Combine all conditions
-    const whereClause = whereConditions.length > 0
-      ? `WHERE ${whereConditions.join(" AND ")}`
-      : "";
-
-    // Optimize by combining the count and data queries in one database call
-    // This reduces round trips to the database
-    const combinedQuery = `
-      -- Get total record count for pagination
-      SELECT COUNT(DISTINCT PC.F050NOMPRE) as total_records
-      FROM [AlocproProd].[dbo].[PARC_CLIENT] PC WITH (NOLOCK)
-      LEFT JOIN [AlocproProd].[dbo].[Pneu_Parc] PP WITH (NOLOCK) ON PC.F091IMMA = PP.F091IMMA
-      ${whereClause};
+    const query = `
+      WITH ClientData AS (
+        SELECT
+          PC.F050NOMPRE AS CLIENT,
+          PC.Client AS code,
+          COUNT(DISTINCT PC.F091IMMA) AS number_of_vehicles,
+          SUM(COALESCE(PP.F410QT, 0)) AS total_pneu_consommé,
+          SUM(COALESCE(PC.F470NBPNEUS, 0)) AS total_pneu_dotation,
+          SUM(COALESCE(PP.F410MTHT, 0)) AS total_montant,
+          CONVERT(VARCHAR, MIN(PC.DD), 105) AS oldest_contract_date,
+          CASE 
+            WHEN COUNT(DISTINCT PC.F091IMMA) > 0 
+            THEN CAST(SUM(COALESCE(PP.F410QT, 0)) AS FLOAT) / COUNT(DISTINCT PC.F091IMMA) 
+            ELSE 0 
+          END AS consommation_moyenne
+        FROM [AlocproProd].[dbo].[PARC_CLIENT] PC WITH (NOLOCK)
+        LEFT JOIN [AlocproProd].[dbo].[Pneu_Parc] PP WITH (NOLOCK) ON PC.F091IMMA = PP.F091IMMA
+        GROUP BY PC.F050NOMPRE, PC.Client
+      )
+      SELECT * FROM ClientData;
 
       -- Get summary totals
       SELECT 
@@ -129,51 +216,19 @@ const get_pneu_consomme = async (req, res) => {
         SUM(COALESCE(PC.F470NBPNEUS, 0)) as total_pneus_dotation,
         SUM(COALESCE(PP.F410MTHT, 0)) as total_montant
       FROM [AlocproProd].[dbo].[PARC_CLIENT] PC WITH (NOLOCK)
-      LEFT JOIN [AlocproProd].[dbo].[Pneu_Parc] PP WITH (NOLOCK) ON PC.F091IMMA = PP.F091IMMA
-      ${whereClause};
-      
-      -- Get paginated data
-      WITH ClientData AS (
-        SELECT
-          PC.F050NOMPRE AS CLIENT,
-          PC.Client AS code,
-          COUNT(DISTINCT PC.F091IMMA) AS number_of_vehicles,
-          SUM(COALESCE(PP.F410QT, 0)) AS total_pneu_consommé,
-          SUM(COALESCE(PC.F470NBPNEUS, 0)) AS total_pneu_dotation,
-          SUM(COALESCE(PP.F410MTHT, 0)) AS total_montant,
-          CONVERT(VARCHAR, MIN(PC.DD),   105) AS oldest_contract_date,
-          CASE 
-            WHEN COUNT(DISTINCT PC.F091IMMA) > 0 
-            THEN CAST(SUM(COALESCE(PP.F410QT, 0)) AS FLOAT) / COUNT(DISTINCT PC.F091IMMA) 
-            ELSE 0 
-          END AS consommation_moyenne,
-          ROW_NUMBER() OVER (ORDER BY ${sortField} ${sortOrder}) AS RowNum
-        FROM [AlocproProd].[dbo].[PARC_CLIENT] PC WITH (NOLOCK)
-        LEFT JOIN [AlocproProd].[dbo].[Pneu_Parc] PP WITH (NOLOCK) ON PC.F091IMMA = PP.F091IMMA
-        ${whereClause}
-        GROUP BY PC.F050NOMPRE, PC.Client
-      )
-      SELECT * FROM ClientData
-      WHERE RowNum > ${offset} AND RowNum <= ${offset + pageSize}
+      LEFT JOIN [AlocproProd].[dbo].[Pneu_Parc] PP WITH (NOLOCK) ON PC.F091IMMA = PP.F091IMMA;
     `;
 
-    // Execute the combined query
-    const result = await request.query(combinedQuery);
-
-    // Extract the different result sets
-    const totalRecords = result.recordsets[0][0].total_records;
-    const summaryTotals = result.recordsets[1][0];
-    const paginatedData = result.recordsets[2];
+    const result = await pool.request().query(query);
 
     res.json({
-      items: paginatedData,
-      total: totalRecords,
+      items: result.recordsets[0],
       totals: {
-        total_clients: summaryTotals.total_clients || 0,
-        total_vehicles: summaryTotals.total_vehicles || 0,
-        total_pneus_consommes: summaryTotals.total_pneus_consommes || 0,
-        total_pneus_dotation: summaryTotals.total_pneus_dotation || 0,
-        total_montant: summaryTotals.total_montant || 0
+        total_clients: result.recordsets[1][0].total_clients || 0,
+        total_vehicles: result.recordsets[1][0].total_vehicles || 0,
+        total_pneus_consommes: result.recordsets[1][0].total_pneus_consommes || 0,
+        total_pneus_dotation: result.recordsets[1][0].total_pneus_dotation || 0,
+        total_montant: result.recordsets[1][0].total_montant || 0
       }
     });
   } catch (error) {
@@ -181,9 +236,6 @@ const get_pneu_consomme = async (req, res) => {
     res.status(500).send(error.message);
   }
 };
-
-
-
 
 
 
