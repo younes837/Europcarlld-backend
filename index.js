@@ -36,10 +36,11 @@ const { get_km_projection } = require("./controllers/projkmController");
 const { get_vidange_projection } = require("./controllers/projkmController");
 const {
   get_entretien_vehicule,
-  test,
   get_all_entretien,
   get_entretien_matricule,
 } = require("./controllers/entretienController");
+const marchePublicPriveArrive = require("./routes/marchePublicPriveArrive");
+
 
 // Utilisation des routes
 app.use("/api", contratRoutes);
@@ -50,6 +51,9 @@ app.use("/api", vendus);
 app.use("/api", get_car_dispo);
 app.use("/api", pneu);
 app.use("/api", achatRoutes);
+app.use("/api", marchePublicPriveArrive);
+
+
 
 app.get("/api/parc-global", getParcGlobal);
 app.get("/api/parc_ca", get_ca_vehicule);
@@ -64,6 +68,7 @@ app.get("/api/vidange_pro", get_vidange_projection);
 app.get("/api/list_entretien", get_entretien_vehicule);
 app.get("/api/all_entretien", get_all_entretien);
 app.get("/api/entretien_matricule", get_entretien_matricule);
+
 
 // Wildcard handler for serving index.html
 app.get("*", (req, res) => {
